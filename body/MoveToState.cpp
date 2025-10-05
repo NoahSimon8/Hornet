@@ -59,6 +59,16 @@ struct Ref
     bool set{false};
 } ref;
 
+struct State
+{
+    float yaw{0}, pitch{0}, roll{0};
+    float yawRate{0}, pitchRate{0}, rollRate{0};
+    float x{0}, y{0}, z{0};
+    float xVel{0}, yVel{0}, zVel{0};
+    float xAcc{0}, yAcc{0}, zAcc{0};
+    bool set{false};
+} state;
+
 void printStatus(uint16_t thrUsA, uint16_t thrUsB)
 {
     if (!imu.hasData())
@@ -109,7 +119,7 @@ void setup()
         delay(1000);
     }
     auto e = imu.euler();
-    ref = {e.yaw, e.pitch, e.roll, true};
+    ref = {e.yaw, e.pitch, e.roll, true}; // maybe make negative?
     Serial.println(F("[fly] reference orientation captured."));
     Serial.println(F("[fly] IMU ok."));
 
@@ -253,6 +263,23 @@ float yawPID(float targetYawDeg, float dt)
     return out;
 }
 
+void updateState()
+{
+    if (!imu.hasData())
+        return;
+    auto e = imu.euler();
+    state.yaw = e.yaw - ref.yaw0;
+    state.pitch = e.pitch - ref.pitch0;
+    state.roll = e.roll - ref.roll0;
+
+    // MEKF data for position and rates
+
+    auto la = imu.linearAccel();
+    state.xAcc = la.x;
+    state.yAcc = la.y;
+    state.zAcc = la.z;
+}
+
 void loop()
 {
     // For maintaining a steady loop rate
@@ -263,6 +290,7 @@ void loop()
 
     // Refresh IMU data
     imu.update();
+    updateState();
 
     // record timestamp for PID use
     double IMUTimestampUs = micros();
