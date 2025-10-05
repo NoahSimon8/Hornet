@@ -6,8 +6,9 @@
 #include "hardware/TVCServo.h"
 #include "util/Math.h"
 #include "utl/pid.h"
+#include "utl/SerialCommands.h"
 
-// ---------- Pins / channels (adjust to your wiring) ----------
+// ---------- Pins / channels ----------
 constexpr uint8_t PIN_POT = A3;
 constexpr uint8_t PCA9685_ADDR = 0x40;
 
@@ -25,11 +26,23 @@ Potentiometer pot(PIN_POT);
 IMU imu(0x4B);
 
 // Linkage numbers — copy your real values here
-TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/  77.98, /*theta0*/  77.98};
-TVCServo::Linkage linkY{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/  77.98, /*theta0*/  77.98};
+TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
+TVCServo::Linkage linkY{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
+
+float maxThrottleN = 2.5; // newtons, this is an estimate
+float maxGimble = 12.0;   // degrees, this is an estimate
 
 TVCServo tvcX(pwm, CH_SERVO_X, linkX, 0, 180, 1000, 2000, 2.0f);
 TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f);
+
+PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
+PID pidPitch(0.8, 0.05, 0.1); // needs tuning
+PID pidYaw(0.8, 0.0, 0.0);    // needs tuning
+PID pidZ(1, 0, 0);            // needs tuning
+PID pidZVelocity(1, 0, 0);    // needs tuning
+
+double loopFreq = 100.0; // Hz
+double prevIMUTimestampUs = 0.0;
 
 // ---------- Simple runtime state ----------
 struct Ref
@@ -65,20 +78,10 @@ void centerTVC()
     tvcY.setDesiredThrustDeg(0.0f);
 }
 
-// Optionally zero the IMU frame at startup pose
-void captureReferenceIfNeeded()
-{
-    if (ref.set || !imu.hasData())
-        return;
-    auto e = imu.euler();
-    ref = {e.yaw, e.pitch, e.roll, true};
-    Serial.println(F("[fly] reference orientation captured."));
-}
-
 void setup()
 {
     Serial.begin(115200);
-    delay(200);
+    delay(500);
 
     // I/O
     pot.begin();
@@ -87,17 +90,13 @@ void setup()
     pwm.begin(50.0f);
 
     // Bring servos to neutral
-    tvcX.begin(90.0f);
-    tvcY.begin(90.0f);
+    centerTVC();
 
     // IMU
-    if (!imu.begin())
+    while (!imu.begin())
     {
         Serial.println(F("[fly] IMU failed to start."));
-        while (true)
-        {
-            delay(1000);
-        }
+        delay(1000);
     }
     Serial.println(F("[fly] IMU ok."));
 
@@ -110,21 +109,87 @@ void setup()
     Serial.println(F("[fly] setup complete."));
 }
 
+std::pair<float, float> rotationalPID(float targetPitchDeg, float targetRollDeg, float dt)
+{
+    // Compute PID outputs
+    float outX = pidRoll.calculate(targetRollDeg, imu.rollDeg(), dt);
+    float outY = pidPitch.calculate(targetPitchDeg, imu.pitchDeg(), dt);
+
+    return {outX, outY};
+}
+
+std::pair<float, float> lateralPID(float targetX, float targetY, float dt)
+{
+    // Compute PID outputs
+    float desRoll = pidRoll.calculate(targetX, 0, dt);
+    float desPitch = pidPitch.calculate(targetY, 0, dt);
+
+    return rotationalPID(desPitch, desRoll, dt);
+}
+
+// returns desired throttle 0..1
+float verticalPID(float targetZ, float dt)
+{
+    float desZVelocity = pidZ.calculate(targetZ, 0, dt);
+    float desThrottle = pidZVelocity.calculate(desZVelocity, 0, dt);
+    return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
+}
+
+// returns desired throttle 0..1
+float potentiometerThrottle()
+{
+    return util::clamp(pot.read01(), 0.0f, 1.0f);
+}
+
+// returns a desired constant, -1..1 to add to ESC 1, subtract from ESC 2
+float yawPID(float targetYawDeg, float dt)
+{
+    float yawError = targetYawDeg - imu.yawDeg();
+    if (yawError > 180.0f)
+        yawError -= 360.0f;
+    if (yawError < -180.0f)
+        yawError += 360.0f;
+
+    float out = pidYaw.calculate(0.0f, -yawError, dt); // negative error maybe?
+    return out;
+}
+
 void loop()
 {
-    // Refresh sensors
+    // For maintaining a steady loop rate
+    double loopstartTimestampUS = micros();
+
+    // Check for serial commands
+    processSerialCommands();
+
+    // Refresh IMU data
     imu.update();
-    captureReferenceIfNeeded();
 
-    // Read pilot throttle from pot (no PID)
-    uint16_t throttleUs = pot.readMicroseconds(1000, 2000);
-    esc1.setMicroseconds(throttleUs);
-    esc2.setMicroseconds(throttleUs);
+    // record timestamp for PID use
+    double IMUTimestampUs = micros();
+    double deltaTime = (IMUTimestampUs - prevIMUTimestampUs) * 1e-6; // seconds
+    prevIMUTimestampUs = IMUTimestampUs;
 
-    // Example TVC behavior *without* PID:
-    // - keep servos near neutral but add small manual offsets if desired.
-    //   Here we simply center them (they still slew toward neutral in update()).
-    centerTVC();
+    // get desired thrust angles
+    auto [outX, outY] = rotationalPID(0.0f, 0.0f, deltaTime); // level flight (swap for lateralPID(x,y,dt) for position hold)
+
+    // Apply to servos as desired thrust angles
+    tvcX.setDesiredThrustDeg(outX);
+    tvcY.setDesiredThrustDeg(outY);
+
+    // get base throttle
+    float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
+ 
+    // calculate yaw correction
+    float yawAdjust = yawPID(0.0f, deltaTime); 
+    float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
+    float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
+
+    // Apply to ESCs
+    uint16_t throttleUsA = static_cast<uint16_t>(util::map(throttle01a, 0.0f, 1.0f, 1000, 2000));
+    uint16_t throttleUsB = static_cast<uint16_t>(util::map(throttle01b, 0.0f, 1.0f, 1000, 2000));
+    esc1.setMicroseconds(throttleUsA);
+    esc2.setMicroseconds(throttleUsB);
 
     // Apply servo updates (slew limiting + PWM)
     tvcX.update();
@@ -133,5 +198,9 @@ void loop()
     // Print a quick status line
     printStatus(throttleUs);
 
-    // delay(10); // ~100 Hz loop
+    // Remember for next loop PID
+
+    // Maintain a steady loop rate
+    double loopdt = (micros() - loopstartTimestampUS) * 1e-6; // seconds
+    delay((1 / loopFreq) - loopdt);
 }

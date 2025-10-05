@@ -8,7 +8,6 @@
 // and maps it to a servo angle using a four-bar linkage model,
 // then writes a PWM pulse via the PCA9685 driver.
 
-
 // 150-600 tick different fromo 1000-2000 us?
 class TVCServo
 {
@@ -97,6 +96,4 @@ private:
 
     float _neutralDeg; // your per-axis neutral (angle14 or angle15)
     int8_t _sign;      // +1 or -1 to match axis direction in the original
-
-
 };
