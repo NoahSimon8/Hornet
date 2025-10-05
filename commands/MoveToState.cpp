@@ -1,12 +1,12 @@
 #include <Arduino.h>
+#include <array>
 #include "hardware/IMU.h"
 #include "hardware/Potentiometer.h"
 #include "hardware/PWMDriver.h"
 #include "hardware/ESC.h"
 #include "hardware/TVCServo.h"
 #include "util/Math.h"
-#include "utl/pid.h"
-#include "utl/SerialCommands.h"
+#include "util/PID.h"
 
 // ---------- Pins / channels ----------
 constexpr uint8_t PIN_POT = A3;
@@ -17,6 +17,16 @@ constexpr uint8_t CH_ESC1 = 12;
 constexpr uint8_t CH_ESC2 = 13;
 constexpr uint8_t CH_SERVO_X = 14;
 constexpr uint8_t CH_SERVO_Y = 15;
+
+// ---------- Constants ----------
+
+float maxThrottleN = 2.5; // newtons, this is an estimate
+float maxGimble = 12.0;   // degrees, this is an estimate
+float angleXNeutral = 108.0f;
+float angleYNeutral = 47.0f;
+
+double loopFreq = 100.0; // Hz
+double prevIMUTimestampUs = 0.0;
 
 // ---------- Global hardware objects ----------
 PWMDriver pwm(PCA9685_ADDR);
@@ -29,20 +39,17 @@ IMU imu(0x4B);
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
 TVCServo::Linkage linkY{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
 
-float maxThrottleN = 2.5; // newtons, this is an estimate
-float maxGimble = 12.0;   // degrees, this is an estimate
+TVCServo tvcX(pwm, CH_SERVO_X, linkX, 0, 180, 1000, 2000, 2.0f, angleXNeutral, +1);
+TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f, angleYNeutral, -1);
 
-TVCServo tvcX(pwm, CH_SERVO_X, linkX, 0, 180, 1000, 2000, 2.0f);
-TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f);
-
+// ---------- PID controllers ----------
 PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
 PID pidPitch(0.8, 0.05, 0.1); // needs tuning
 PID pidYaw(0.8, 0.0, 0.0);    // needs tuning
+PID pidX(1, 0, 0);            // needs tuning
+PID pidY(1, 0, 0);            // needs tuning
 PID pidZ(1, 0, 0);            // needs tuning
 PID pidZVelocity(1, 0, 0);    // needs tuning
-
-double loopFreq = 100.0; // Hz
-double prevIMUTimestampUs = 0.0;
 
 // ---------- Simple runtime state ----------
 struct Ref
@@ -51,13 +58,15 @@ struct Ref
     bool set{false};
 } ref;
 
-void printStatus(uint16_t thrUs)
+void printStatus(uint16_t thrUsA, uint16_t thrUsB)
 {
     if (!imu.hasData())
         return;
     const auto e = imu.euler();
-    Serial.print("thr_us=");
-    Serial.print(thrUs);
+    Serial.print("thr_usA=");
+    Serial.print(thrUsA);
+    Serial.print(", thr_usB=");
+    Serial.print(thrUsB);
     Serial.print(", yaw=");
     Serial.print(e.yaw, 2);
     Serial.print(", pitch=");
@@ -109,20 +118,106 @@ void setup()
     Serial.println(F("[fly] setup complete."));
 }
 
-std::pair<float, float> rotationalPID(float targetPitchDeg, float targetRollDeg, float dt)
+// Parse a token that might be "kp=...", "ki=...", "kd=...", or single-char commands.
+void parseToken(const String &token)
 {
-    // Compute PID outputs
-    float outX = pidRoll.calculate(targetRollDeg, imu.rollDeg(), dt);
-    float outY = pidPitch.calculate(targetPitchDeg, imu.pitchDeg(), dt);
-
-    return {outX, outY};
+    if (token.startsWith("kp="))
+    {
+        String val = token.substring(3);
+        float newKp = val.toFloat();
+        if (newKp != 0.0 || val == "0" || val == "0.0")
+        {
+            pidRoll.setP(newKp);
+            pidPitch.setP(newKp);
+            Serial.print("Updated kp to: ");
+            Serial.println(newKp);
+        }
+    }
+    else if (token.startsWith("ki="))
+    {
+        String val = token.substring(3);
+        float newKi = val.toFloat();
+        if (newKi != 0.0 || val == "0" || val == "0.0")
+        {
+            pidRoll.setI(newKi);
+            pidPitch.setI(newKi);
+            Serial.print("Updated ki to: ");
+            Serial.println(newKi);
+        }
+    }
+    else if (token.startsWith("kd="))
+    {
+        String val = token.substring(3);
+        float newKd = val.toFloat();
+        if (newKd != 0.0 || val == "0" || val == "0.0")
+        {
+            pidRoll.setD(newKd);
+            pidPitch.setD(newKd);
+            Serial.print("Updated kd to: ");
+            Serial.println(newKd);
+        }
+    }
 }
 
-std::pair<float, float> lateralPID(float targetX, float targetY, float dt)
+// Function to process incoming serial commands
+void processSerialCommands()
+{
+    if (Serial.available() > 0)
+    {
+        String input = Serial.readStringUntil('\n');
+        input.trim();
+        if (input.length() == 0)
+            return;
+
+        int startIndex = 0;
+        while (true)
+        {
+            int spaceIndex = input.indexOf(' ', startIndex);
+            String token;
+            if (spaceIndex == -1)
+            {
+                token = input.substring(startIndex);
+                token.trim();
+                if (token.length() > 0)
+                {
+                    parseToken(token);
+                }
+                break;
+            }
+            else
+            {
+                token = input.substring(startIndex, spaceIndex);
+                token.trim();
+                if (token.length() > 0)
+                {
+                    parseToken(token);
+                }
+                startIndex = spaceIndex + 1;
+            }
+        }
+    }
+}
+
+// returns {xOutput, yOutput} for thrust angles
+std::array<float, 2>  rotationalPID(float targetPitchDeg, float targetRollDeg, float dt)
 {
     // Compute PID outputs
-    float desRoll = pidRoll.calculate(targetX, 0, dt);
-    float desPitch = pidPitch.calculate(targetY, 0, dt);
+    std::array<float, 2> out{};
+
+    out[0] = pidRoll.calculate(targetRollDeg, imu.rollDeg(), dt);
+    out[1] = pidPitch.calculate(targetPitchDeg, imu.pitchDeg(), dt);
+
+    return out;
+}
+
+// returns {xOutput, yOutput} for thruster angles
+std::array<float, 2> lateralPID(float targetX, float targetY, float dt)
+{
+    std::array<float, 2> out{};
+
+    // Compute PID outputs
+    float desRoll = pidX.calculate(targetX, 0, dt);
+    float desPitch = pidY.calculate(targetY, 0, dt);
 
     return rotationalPID(desPitch, desRoll, dt);
 }
@@ -171,23 +266,23 @@ void loop()
     prevIMUTimestampUs = IMUTimestampUs;
 
     // get desired thrust angles
-    auto [outX, outY] = rotationalPID(0.0f, 0.0f, deltaTime); // level flight (swap for lateralPID(x,y,dt) for position hold)
+    std::array<float, 2> pidOut = rotationalPID(0.0f, 0.0f, deltaTime); // level flight (swap for lateralPID(x,y,dt) for position hold)
 
     // Apply to servos as desired thrust angles
-    tvcX.setDesiredThrustDeg(outX);
-    tvcY.setDesiredThrustDeg(outY);
+    tvcX.setDesiredThrustDeg(pidOut[0]);
+    tvcY.setDesiredThrustDeg(pidOut[1]);
 
     // get base throttle
     float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
- 
+
     // calculate yaw correction
-    float yawAdjust = yawPID(0.0f, deltaTime); 
+    float yawAdjust = yawPID(0.0f, deltaTime);
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
     // Apply to ESCs
-    uint16_t throttleUsA = static_cast<uint16_t>(util::map(throttle01a, 0.0f, 1.0f, 1000, 2000));
-    uint16_t throttleUsB = static_cast<uint16_t>(util::map(throttle01b, 0.0f, 1.0f, 1000, 2000));
+    uint16_t throttleUsA = static_cast<uint16_t>(util::mapFloat(throttle01a, 0.0f, 1.0f, 1000, 2000));
+    uint16_t throttleUsB = static_cast<uint16_t>(util::mapFloat(throttle01b, 0.0f, 1.0f, 1000, 2000));
     esc1.setMicroseconds(throttleUsA);
     esc2.setMicroseconds(throttleUsB);
 
@@ -196,7 +291,7 @@ void loop()
     tvcY.update();
 
     // Print a quick status line
-    printStatus(throttleUs);
+    printStatus(throttleUsA, throttleUsB);
 
     // Remember for next loop PID
 
