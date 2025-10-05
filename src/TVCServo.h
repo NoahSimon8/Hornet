@@ -7,6 +7,9 @@
 // It accepts a desired *thrust-vector tilt* (beta) in degrees
 // and maps it to a servo angle using a four-bar linkage model,
 // then writes a PWM pulse via the PCA9685 driver.
+
+
+// 150-600 tick different fromo 1000-2000 us?
 class TVCServo
 {
 public:
