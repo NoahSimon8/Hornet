@@ -5,6 +5,7 @@
 #include "hardware/ESC.h"
 #include "hardware/TVCServo.h"
 #include "util/Math.h"
+#include "utl/pid.h"
 
 // ---------- Pins / channels (adjust to your wiring) ----------
 constexpr uint8_t PIN_POT = A3;
@@ -24,8 +25,8 @@ Potentiometer pot(PIN_POT);
 IMU imu(0x4B);
 
 // Linkage numbers — copy your real values here
-TVCServo::Linkage linkX{/*L1*/ 40, /*L2*/ 25, /*L3*/ 60, /*L4*/ 30, /*beta0*/ 0, /*theta0*/ 90};
-TVCServo::Linkage linkY{/*L1*/ 40, /*L2*/ 25, /*L3*/ 60, /*L4*/ 30, /*beta0*/ 0, /*theta0*/ 90};
+TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/  77.98, /*theta0*/  77.98};
+TVCServo::Linkage linkY{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/  77.98, /*theta0*/  77.98};
 
 TVCServo tvcX(pwm, CH_SERVO_X, linkX, 0, 180, 1000, 2000, 2.0f);
 TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f);
@@ -116,9 +117,9 @@ void loop()
     captureReferenceIfNeeded();
 
     // Read pilot throttle from pot (no PID)
-    uint16_t thrUs = pot.readMicroseconds(1000, 2000);
-    esc1.setMicroseconds(thrUs);
-    esc2.setMicroseconds(thrUs);
+    uint16_t throttleUs = pot.readMicroseconds(1000, 2000);
+    esc1.setMicroseconds(throttleUs);
+    esc2.setMicroseconds(throttleUs);
 
     // Example TVC behavior *without* PID:
     // - keep servos near neutral but add small manual offsets if desired.
@@ -130,7 +131,7 @@ void loop()
     tvcY.update();
 
     // Print a quick status line
-    printStatus(thrUs);
+    printStatus(throttleUs);
 
-    delay(10); // ~100 Hz loop
+    // delay(10); // ~100 Hz loop
 }

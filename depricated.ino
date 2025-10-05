@@ -273,6 +273,7 @@ void moveServosWithPID(float outputX, float outputY) {
   float targetServo14Pos = angle14 - servoAngleY;
   float targetServo15Pos = angle15 + servoAngleX;
 
+  // rate limiter
   float newServo14Pos = constrain(targetServo14Pos,
                                   lastServo14Pos - maxServoChangePerUpdate,
                                   lastServo14Pos + maxServoChangePerUpdate);
