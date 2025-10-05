@@ -55,6 +55,7 @@ PID pidZVelocity(1, 0, 0);    // needs tuning
 struct Ref
 {
     float yaw0{0}, pitch0{0}, roll0{0};
+    float x0{0}, y0{0}, z0{0};
     bool set{false};
 } ref;
 
@@ -107,6 +108,9 @@ void setup()
         Serial.println(F("[fly] IMU failed to start."));
         delay(1000);
     }
+    auto e = imu.euler();
+    ref = {e.yaw, e.pitch, e.roll, true};
+    Serial.println(F("[fly] reference orientation captured."));
     Serial.println(F("[fly] IMU ok."));
 
     // Arm ESCs at minimum
@@ -199,7 +203,7 @@ void processSerialCommands()
 }
 
 // returns {xOutput, yOutput} for thrust angles
-std::array<float, 2>  rotationalPID(float targetPitchDeg, float targetRollDeg, float dt)
+std::array<float, 2> rotationalPID(float targetPitchDeg, float targetRollDeg, float dt)
 {
     // Compute PID outputs
     std::array<float, 2> out{};
@@ -266,7 +270,7 @@ void loop()
     prevIMUTimestampUs = IMUTimestampUs;
 
     // get desired thrust angles
-    std::array<float, 2> pidOut = rotationalPID(0.0f, 0.0f, deltaTime); // level flight (swap for lateralPID(x,y,dt) for position hold)
+    std::array<float, 2> pidOut = lateralPID(0.0f, 0.0f, deltaTime); // level flight at origin
 
     // Apply to servos as desired thrust angles
     tvcX.setDesiredThrustDeg(pidOut[0]);

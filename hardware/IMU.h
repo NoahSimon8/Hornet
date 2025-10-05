@@ -3,6 +3,11 @@
 #include <Wire.h>
 #include <Adafruit_BNO08x.h>
 
+struct LinearAccel
+{
+  float x{0}, y{0}, z{0}; // m/s²
+};
+
 struct Euler
 {
   float yaw{0}, pitch{0}, roll{0}; // degrees
@@ -43,6 +48,8 @@ public:
         _quat.z = val.un.arvrStabilizedRV.k;
         _euler = quatToEulerDeg(_quat);
         _hasData = true;
+
+        // FILL IN LINEAR STRUCT
       }
     }
   }
@@ -50,6 +57,7 @@ public:
   bool hasData() const { return _hasData; }
   QuaternionF quat() const { return _quat; }
   Euler euler() const { return _euler; }
+  LinearAccel linearAccel() const { return _linearAccel; }
   float yawDeg() const { return _euler.yaw; }
   float pitchDeg() const { return _euler.pitch; }
   float rollDeg() const { return _euler.roll; }
@@ -83,5 +91,6 @@ private:
   Adafruit_BNO08x _bno;
   QuaternionF _quat{};
   Euler _euler{};
+  LinearAccel _linearAccel{};
   bool _hasData{false};
 };
