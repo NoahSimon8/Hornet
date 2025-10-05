@@ -5,12 +5,15 @@
 
 struct LinearAccel
 {
-  float x{0}, y{0}, z{0}; // m/s²
+  float x{0}, y{0}, z{0}; // m/sÂ²
 };
 
 struct Euler
 {
   float yaw{0}, pitch{0}, roll{0}; // degrees
+  Euler() = default;
+  Euler(float yawDeg, float pitchDeg, float rollDeg)
+      : yaw(yawDeg), pitch(pitchDeg), roll(rollDeg) {}
 };
 
 struct QuaternionF
@@ -29,7 +32,7 @@ public:
       return false;
 
     // Prefer AR/VR stabilized rotation vector; fall back to gyro-integrated
-    _bno.enableReport(SH2_ARVR_STABILIZED_RV, 5000); // 200 Hz → 5000 µs? (BNO uses µs period)
+    _bno.enableReport(SH2_ARVR_STABILIZED_RV, 5000); // 200 Hz â†’ 5000 Âµs? (BNO uses Âµs period)
     _bno.enableReport(SH2_GYRO_INTEGRATED_RV, 5000);
     return true;
   }

@@ -41,14 +41,21 @@ TVCServo tvcX(pwm, CH_SERVO_X, linkX, 0, 180, 1000, 2000, 2.0f, angleXNeutral, +
 TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f, angleYNeutral, -1);
 
 // ---------- PID controllers ----------
-PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
-PID pidPitch(0.8, 0.05, 0.1); // needs tuning
-PID pidYaw(0.8, 0.0, 0.0);    // needs tuning
-PID pidX(1, 0, 0);            // needs tuning
-PID pidY(1, 0, 0);            // needs tuning
-PID pidZ(1, 0, 0);            // needs tuning
-PID pidZVelocity(1, 0, 0);    // needs tuning
+// PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
+// PID pidPitch(0.8, 0.05, 0.1); // needs tuning
+// PID pidYaw(0.8, 0.0, 0.0);    // needs tuning
+// PID pidX(1, 0, 0);            // needs tuning
+// PID pidY(1, 0, 0);            // needs tuning
+// PID pidZ(1, 0, 0);            // needs tuning
+// PID pidZVelocity(1, 0, 0);    // needs tuning
 
+PID pidRoll(0, 0, 0);      // needs tuning
+PID pidPitch(0, 0, 0);     // needs tuning
+PID pidYaw(0, 0, 0);       // needs tuning
+PID pidX(0, 0, 0);         // needs tuning
+PID pidY(0, 0, 0);         // needs tuning
+PID pidZ(0, 0, 0);         // needs tuning
+PID pidZVelocity(0, 0, 0); // needs tuning
 // ---------- Simple runtime state ----------
 
 struct Ref
@@ -84,11 +91,17 @@ int loopCount = 0;
 void printStatus(uint16_t thrUsA, uint16_t thrUsB)
 {
     if (!imu.hasData())
+    {
+        Serial.println(F("[fly] IMU has no data."));
         return;
+    }
     Serial.print("thr_usA=");
     Serial.print(thrUsA);
     Serial.print(", thr_usB=");
     Serial.print(thrUsB);
+    Serial.print(", pot=");
+    Serial.print(pot.read01(), 3);
+    
     Serial.print(", yaw=");
     Serial.print(state.yaw, 2);
     Serial.print(", pitch=");
@@ -139,7 +152,9 @@ void centerTVC()
 
 void setup()
 {
+
     Serial.begin(115200);
+    Serial.println(F("[fly] starting setup..."));
     delay(500);
 
     // I/O
@@ -149,7 +164,7 @@ void setup()
     pwm.begin(50.0f);
 
     // Bring servos to neutral
-    centerTVC();
+    // centerTVC();
 
     // IMU
     while (!imu.begin())
@@ -157,8 +172,12 @@ void setup()
         Serial.println(F("[fly] IMU failed to start."));
         delay(1000);
     }
-    auto e = imu.euler();
-    ref = {e.yaw, e.pitch, e.roll, true}; // maybe make negative?
+
+    ref.yaw0 = imu.yawDeg();
+    ref.pitch0 = imu.pitchDeg();
+    ref.roll0 = imu.rollDeg();
+    ref.set = true;
+
     Serial.println(F("[fly] reference orientation captured."));
     Serial.println(F("[fly] IMU ok."));
 
@@ -266,7 +285,6 @@ std::array<float, 2> rotationalPID(float dt)
 // returns {xOutput, yOutput} for thruster angles
 std::array<float, 2> lateralPID(float dt)
 {
-    std::array<float, 2> out{};
     if (loopCount % 3 == 0)
     {
         // Compute PID outputs
@@ -274,13 +292,13 @@ std::array<float, 2> lateralPID(float dt)
         desState.pitch = pidY.calculate(desState.y, 0, dt);
     }
 
-    return rotationalPID(desState.roll, desState.pitch, dt);
+    return rotationalPID(dt);
 }
 
 // returns desired throttle 0..1
 float verticalPID(float dt)
 {
-    float desZVelocity = pidZ.calculate(desState.z, 0, dt);
+    desState.zVel = pidZ.calculate(desState.z, 0, dt);
     float desThrottle = pidZVelocity.calculate(desState.zVel, 0, dt);
     return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
 }
@@ -349,7 +367,7 @@ void loop()
     float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
 
     // calculate yaw correction
-    float yawAdjust = yawPID(0.0f, deltaTime);
+    float yawAdjust = yawPID(deltaTime);
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
@@ -368,5 +386,5 @@ void loop()
 
     // Maintain a steady loop rate
     double loopdt = (micros() - loopstartTimestampUS) * 1e-6; // seconds
-    delay((1 / loopFreq) - loopdt);
+    delay(((1 / loopFreq) - loopdt) * 1000.0);
 }
