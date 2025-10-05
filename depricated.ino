@@ -28,7 +28,7 @@ const float THETA_INIT = 77.98;
 const float BETA_INIT = 77.98;
 const float LINK1 = 44.0;
 const float LINK2 = 76.8608;
-const float LINK3 = 75.177;
+const float LINK3 = 75.177; 
 const float LINK4 = 28.0;
 
 // === PWM Instances for ESCs (nRF52 side, left in place per original code) ===

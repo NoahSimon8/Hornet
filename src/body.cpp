@@ -20,13 +20,11 @@ constexpr uint8_t CH_SERVO_Y = 15;
 
 // ---------- Constants ----------
 
-float maxThrottleN = 2.5; // newtons, this is an estimate
-float maxGimble = 12.0;   // degrees, this is an estimate
-float angleXNeutral = 108.0f;
-float angleYNeutral = 47.0f;
-
-double loopFreq = 100.0; // Hz
-double prevIMUTimestampUs = 0.0;
+const float maxThrottleN = 2.5; // newtons, this is an estimate
+const float maxGimble = 12.0;   // degrees, this is an estimate
+const float angleXNeutral = 108.0f;
+const float angleYNeutral = 47.0f;
+const double loopFreq = 100.0; // Hz
 
 // ---------- Global hardware objects ----------
 PWMDriver pwm(PCA9685_ADDR);
@@ -52,6 +50,7 @@ PID pidZ(1, 0, 0);            // needs tuning
 PID pidZVelocity(1, 0, 0);    // needs tuning
 
 // ---------- Simple runtime state ----------
+
 struct Ref
 {
     float yaw0{0}, pitch0{0}, roll0{0};
@@ -66,30 +65,70 @@ struct State
     float x{0}, y{0}, z{0};
     float xVel{0}, yVel{0}, zVel{0};
     float xAcc{0}, yAcc{0}, zAcc{0};
-    bool set{false};
 } state;
+
+struct desState
+{
+    float yaw{0}, pitch{0}, roll{0};
+    float x{0}, y{0}, z{0};
+    float zVel{0};
+} desState;
+
+// ---------- Global state ----------
+
+double prevIMUTimestampUs = 0.0;
+int loopCount = 0;
+
+// ---------- data logging ----------
 
 void printStatus(uint16_t thrUsA, uint16_t thrUsB)
 {
     if (!imu.hasData())
         return;
-    const auto e = imu.euler();
     Serial.print("thr_usA=");
     Serial.print(thrUsA);
     Serial.print(", thr_usB=");
     Serial.print(thrUsB);
     Serial.print(", yaw=");
-    Serial.print(e.yaw, 2);
+    Serial.print(state.yaw, 2);
     Serial.print(", pitch=");
-    Serial.print(e.pitch, 2);
+    Serial.print(state.pitch, 2);
     Serial.print(", roll=");
-    Serial.print(e.roll, 2);
+    Serial.print(state.roll, 2);
+    Serial.print(", x=");
+    Serial.print(state.x, 2);
+    Serial.print(", y=");
+    Serial.print(state.y, 2);
+    Serial.print(", z=");
+    Serial.print(state.z, 2);
+    Serial.print(", xVel=");
+    Serial.print(state.xVel, 2);
+    Serial.print(", yVel=");
+    Serial.print(state.yVel, 2);
+    Serial.print(", zVel=");
+    Serial.print(state.zVel, 2);
+    Serial.print(", xAcc=");
+    Serial.print(state.xAcc, 2);
+    Serial.print(", yAcc=");
+    Serial.print(state.yAcc, 2);
+    Serial.print(", zAcc=");
+    Serial.print(state.zAcc, 2);
+
+    Serial.print(", desPitch=");
+    Serial.print(desState.pitch, 2);
+    Serial.print(", y=");
+    Serial.print(desState.roll, 2);
+    Serial.print(", desZVel=");
+    Serial.print(desState.zVel, 2);
+
     Serial.print(", svx=");
     Serial.print(tvcX.commandedServoDeg(), 1);
     Serial.print(", svy=");
     Serial.print(tvcY.commandedServoDeg(), 1);
     Serial.println();
 }
+
+// ---------- Main program ----------
 
 // Utility that doesn’t belong to a single device: basic centering & neutralization
 void centerTVC()
@@ -213,34 +252,36 @@ void processSerialCommands()
 }
 
 // returns {xOutput, yOutput} for thrust angles
-std::array<float, 2> rotationalPID(float targetPitchDeg, float targetRollDeg, float dt)
+std::array<float, 2> rotationalPID(float dt)
 {
     // Compute PID outputs
     std::array<float, 2> out{};
 
-    out[0] = pidRoll.calculate(targetRollDeg, imu.rollDeg(), dt);
-    out[1] = pidPitch.calculate(targetPitchDeg, imu.pitchDeg(), dt);
+    out[0] = pidRoll.calculate(desState.roll, state.roll, dt);
+    out[1] = pidPitch.calculate(desState.pitch, state.pitch, dt);
 
     return out;
 }
 
 // returns {xOutput, yOutput} for thruster angles
-std::array<float, 2> lateralPID(float targetX, float targetY, float dt)
+std::array<float, 2> lateralPID(float dt)
 {
     std::array<float, 2> out{};
+    if (loopCount % 3 == 0)
+    {
+        // Compute PID outputs
+        desState.roll = pidX.calculate(desState.x, 0, dt);
+        desState.pitch = pidY.calculate(desState.y, 0, dt);
+    }
 
-    // Compute PID outputs
-    float desRoll = pidX.calculate(targetX, 0, dt);
-    float desPitch = pidY.calculate(targetY, 0, dt);
-
-    return rotationalPID(desPitch, desRoll, dt);
+    return rotationalPID(desState.roll, desState.pitch, dt);
 }
 
 // returns desired throttle 0..1
-float verticalPID(float targetZ, float dt)
+float verticalPID(float dt)
 {
-    float desZVelocity = pidZ.calculate(targetZ, 0, dt);
-    float desThrottle = pidZVelocity.calculate(desZVelocity, 0, dt);
+    float desZVelocity = pidZ.calculate(desState.z, 0, dt);
+    float desThrottle = pidZVelocity.calculate(desState.zVel, 0, dt);
     return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
 }
 
@@ -251,9 +292,9 @@ float potentiometerThrottle()
 }
 
 // returns a desired constant, -1..1 to add to ESC 1, subtract from ESC 2
-float yawPID(float targetYawDeg, float dt)
+float yawPID(float dt)
 {
-    float yawError = targetYawDeg - imu.yawDeg();
+    float yawError = desState.yaw - state.yaw;
     if (yawError > 180.0f)
         yawError -= 360.0f;
     if (yawError < -180.0f)
@@ -298,7 +339,7 @@ void loop()
     prevIMUTimestampUs = IMUTimestampUs;
 
     // get desired thrust angles
-    std::array<float, 2> pidOut = lateralPID(0.0f, 0.0f, deltaTime); // level flight at origin
+    std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
     // Apply to servos as desired thrust angles
     tvcX.setDesiredThrustDeg(pidOut[0]);
@@ -324,8 +365,6 @@ void loop()
 
     // Print a quick status line
     printStatus(throttleUsA, throttleUsB);
-
-    // Remember for next loop PID
 
     // Maintain a steady loop rate
     double loopdt = (micros() - loopstartTimestampUS) * 1e-6; // seconds
