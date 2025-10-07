@@ -7,6 +7,7 @@
 #include "hardware/TVCServo.h"
 #include "util/Math.h"
 #include "util/PID.h"
+#include "util/q_mekf.h"
 
 // ---------- Pins / channels ----------
 constexpr uint8_t PIN_POT = A3;

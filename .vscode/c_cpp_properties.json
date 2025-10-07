@@ -10,6 +10,8 @@
             "includePath": [
                 "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/include",
                 "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/src",
+                "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/ArduinoEigen",
+                "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/ArxTypeTraits",
                 "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/Adafruit PWM Servo Driver Library",
                 "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/Adafruit BNO08x/src",
                 "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/Adafruit Unified Sensor",
@@ -121,6 +123,8 @@
                 "path": [
                     "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/include",
                     "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/src",
+                    "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/ArduinoEigen",
+                    "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/ArxTypeTraits",
                     "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/Adafruit PWM Servo Driver Library",
                     "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/Adafruit BNO08x/src",
                     "C:/Users/nrjjs/Desktop/code/cpp/oldDrone/.pio/libdeps/teensy41/Adafruit Unified Sensor",
