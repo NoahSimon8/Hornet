@@ -101,7 +101,7 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
     Serial.print(thrUsB);
     Serial.print(", pot=");
     Serial.print(pot.read01(), 3);
-    
+
     Serial.print(", yaw=");
     Serial.print(state.yaw, 2);
     Serial.print(", pitch=");
@@ -154,8 +154,10 @@ void setup()
 {
 
     Serial.begin(115200);
+    while (!Serial && millis() < 5000)
+    {
+    }
     Serial.println(F("[fly] starting setup..."));
-    delay(500);
 
     // I/O
     pot.begin();
