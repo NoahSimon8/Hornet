@@ -11,7 +11,7 @@
 #include "util/q_mekf.h"
 
 // ---------- Pins / channels ----------
-constexpr uint8_t PIN_POT = A3;
+constexpr uint8_t PIN_POT = A2;
 constexpr uint8_t PCA9685_ADDR = 0x40;
 
 // PCA9685 channels
@@ -32,7 +32,7 @@ const double loopFreq = 100.0; // Hz
 PWMDriver pwm(PCA9685_ADDR);
 ESC esc1(pwm, CH_ESC1, 1000, 2000);
 ESC esc2(pwm, CH_ESC2, 1000, 2000);
-Potentiometer pot(PIN_POT);
+Potentiometer pot(A2);
 IMU imu(0x4B, Wire2);
 
 // Linkage numbers — copy your real values here
@@ -103,29 +103,28 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
     // Serial.print(thrUsB);
     // Serial.print(", pot=");
     Serial.print(pot.read01(), 3);
-    Serial.print(", ");
-
+    Serial.print(", Raw: ");
     Serial.print(pot.readRaw(), 3);
 
-    // Serial.print(", yaw=");
-    // Serial.print(state.yaw, 2);
-    // Serial.print(", pitch=");
-    // Serial.print(state.pitch, 2);
-    // Serial.print(", roll=");
-    // Serial.print(state.roll, 2);
-    // Serial.print(", x=");
-    // Serial.print(state.x, 2);
-    // Serial.print(", y=");
-    // Serial.print(state.y, 2);
-    // Serial.print(", z=");
-    // Serial.print(state.z, 2);
-    // Serial.print(", xVel=");
-    // Serial.print(state.xVel, 2);
-    // Serial.print(", yVel=");
-    // Serial.print(state.yVel, 2);
-    // Serial.print(", zVel=");
-    // Serial.print(state.zVel, 2);
-    Serial.print(", xAcc=");
+        // Serial.print(", yaw=");
+        // Serial.print(state.yaw, 2);
+        // Serial.print(", pitch=");
+        // Serial.print(state.pitch, 2);
+        // Serial.print(", roll=");
+        // Serial.print(state.roll, 2);
+        // Serial.print(", x=");
+        // Serial.print(state.x, 2);
+        // Serial.print(", y=");
+        // Serial.print(state.y, 2);
+        // Serial.print(", z=");
+        // Serial.print(state.z, 2);
+        // Serial.print(", xVel=");
+        // Serial.print(state.xVel, 2);
+        // Serial.print(", yVel=");
+        // Serial.print(state.yVel, 2);
+        // Serial.print(", zVel=");
+        // Serial.print(state.zVel, 2);
+        Serial.print(", xAcc=");
     Serial.print(state.xAcc, 2);
     Serial.print(", yAcc=");
     Serial.print(state.yAcc, 2);
@@ -157,7 +156,6 @@ void centerTVC()
 
 void setup()
 {
-
     Serial.begin(115200);
     while (!Serial && millis() < 5000)
     {
