@@ -34,7 +34,7 @@ public:
       return false;
 
     // Prefer AR/VR stabilized rotation vector; fall back to gyro-integrated
-    _bno.enableReport(SH2_ARVR_STABILIZED_RV, 10000); // 200 Hz â†’ 5000 Âµs? (BNO uses Âµs period)
+    _bno.enableReport(SH2_ARVR_STABILIZED_RV, 10000);
     _bno.enableReport(SH2_GYRO_INTEGRATED_RV, 10000);
     return true;
   }

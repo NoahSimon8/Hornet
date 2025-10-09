@@ -87,6 +87,7 @@ struct desState
 
 double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
+bool stopped = false;
 
 // ---------- data logging ----------
 
@@ -102,29 +103,26 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
     // Serial.print(", thr_usB=");
     // Serial.print(thrUsB);
     // Serial.print(", pot=");
-    Serial.print(pot.read01(), 3);
-    Serial.print(", Raw: ");
-    Serial.print(pot.readRaw(), 3);
 
-        // Serial.print(", yaw=");
-        // Serial.print(state.yaw, 2);
-        // Serial.print(", pitch=");
-        // Serial.print(state.pitch, 2);
-        // Serial.print(", roll=");
-        // Serial.print(state.roll, 2);
-        // Serial.print(", x=");
-        // Serial.print(state.x, 2);
-        // Serial.print(", y=");
-        // Serial.print(state.y, 2);
-        // Serial.print(", z=");
-        // Serial.print(state.z, 2);
-        // Serial.print(", xVel=");
-        // Serial.print(state.xVel, 2);
-        // Serial.print(", yVel=");
-        // Serial.print(state.yVel, 2);
-        // Serial.print(", zVel=");
-        // Serial.print(state.zVel, 2);
-        Serial.print(", xAcc=");
+    // Serial.print(", yaw=");
+    // Serial.print(state.yaw, 2);
+    // Serial.print(", pitch=");
+    // Serial.print(state.pitch, 2);
+    // Serial.print(", roll=");
+    // Serial.print(state.roll, 2);
+    // Serial.print(", x=");
+    // Serial.print(state.x, 2);
+    // Serial.print(", y=");
+    // Serial.print(state.y, 2);
+    // Serial.print(", z=");
+    // Serial.print(state.z, 2);
+    // Serial.print(", xVel=");
+    // Serial.print(state.xVel, 2);
+    // Serial.print(", yVel=");
+    // Serial.print(state.yVel, 2);
+    // Serial.print(", zVel=");
+    // Serial.print(state.zVel, 2);
+    Serial.print(", xAcc=");
     Serial.print(state.xAcc, 2);
     Serial.print(", yAcc=");
     Serial.print(state.yAcc, 2);
@@ -212,6 +210,7 @@ void setup()
 // Parse a token that might be "kp=...", "ki=...", "kd=...", or single-char commands.
 void parseToken(const String &token)
 {
+
     if (token.startsWith("kp="))
     {
         String val = token.substring(3);
@@ -258,7 +257,10 @@ void processSerialCommands()
         String input = Serial.readStringUntil('\n');
         input.trim();
         if (input.length() == 0)
+        {
+            stopped = !stopped;
             return;
+        }
 
         int startIndex = 0;
         while (true)
@@ -304,20 +306,26 @@ std::array<float, 2> rotationalPID(float dt)
 // returns {xOutput, yOutput} for thruster angles
 std::array<float, 2> lateralPID(float dt)
 {
+    // outerloop on position
     if (loopCount % 3 == 0)
     {
         // Compute PID outputs
         desState.roll = pidX.calculate(desState.x, 0, dt);
         desState.pitch = pidY.calculate(desState.y, 0, dt);
     }
-
+    // innerloop on rotation
     return rotationalPID(dt);
 }
 
 // returns desired throttle 0..1
 float verticalPID(float dt)
 {
-    desState.zVel = pidZ.calculate(desState.z, 0, dt);
+    // outerloop on position
+    if (loopCount % 3 == 0)
+    {
+        desState.zVel = pidZ.calculate(desState.z, 0, dt);
+    }
+    // innerloop on velocity
     float desThrottle = pidZVelocity.calculate(desState.zVel, 0, dt);
     return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
 }
@@ -362,58 +370,66 @@ void loop()
 {
     // For maintaining a steady loop rate
     double loopstartTimestampUS = micros();
+    processSerialCommands();
+    if (stopped)
+    {
+        esc1.setMicroseconds(1000);
+        esc2.setMicroseconds(1000);
+        centerTVC();
+        tvcX.update();
+        tvcY.update();
+        Serial.println(F("[fly] stopped."));
+        delay(1000);
+        return;
+    }
 
     // // Refresh IMU data
     imu.update();
     updateState();
 
-    // // record timestamp for PID use
-    // double IMUTimestampUs = micros();
-    // double deltaTime = (IMUTimestampUs - prevIMUTimestampUs) * 1e-6; // seconds
-    // prevIMUTimestampUs = IMUTimestampUs;
+    // record timestamp for PID use
+    double IMUTimestampUs = micros();
+    double deltaTime = (IMUTimestampUs - prevIMUTimestampUs) * 1e-6; // seconds
+    prevIMUTimestampUs = IMUTimestampUs;
 
-    // // get desired thrust angles
-    // std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
+    // get desired thrust angles
+    std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
-    // // Apply to servos as desired thrust angles
-    // tvcX.setDesiredThrustDeg(pidOut[0]);
-    // tvcY.setDesiredThrustDeg(pidOut[1]);
+    // Apply to servos as desired thrust angles
+    tvcX.setDesiredThrustDeg(pidOut[0]);
+    tvcY.setDesiredThrustDeg(pidOut[1]);
 
-    // // get base throttle
-    // float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
+    // get base throttle
+    float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
 
-    // // calculate yaw correction
-    // float yawAdjust = yawPID(deltaTime);
-    // float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
-    // float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
+    // calculate yaw correction
+    float yawAdjust = yawPID(deltaTime);
+    float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
+    float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
-    // // Apply to ESCs
-    // uint16_t throttleUsA = static_cast<uint16_t>(util::mapFloat(throttle01a, 0.0f, 1.0f, 1000, 2000));
-    // uint16_t throttleUsB = static_cast<uint16_t>(util::mapFloat(throttle01b, 0.0f, 1.0f, 1000, 2000));
-    // esc1.setMicroseconds(throttleUsA);
-    // esc2.setMicroseconds(throttleUsB);
+    // Apply to ESCs
+    uint16_t throttleUsA = static_cast<uint16_t>(util::mapFloat(throttle01a, 0.0f, 1.0f, 1000, 2000));
+    uint16_t throttleUsB = static_cast<uint16_t>(util::mapFloat(throttle01b, 0.0f, 1.0f, 1000, 2000));
+    esc1.setMicroseconds(throttleUsA);
+    esc2.setMicroseconds(throttleUsB);
 
-    // // Apply servo updates (slew limiting + PWM)
-    // tvcX.update();
-    // tvcY.update();
+    // Apply servo updates (slew limiting + PWM)
+    tvcX.update();
+    tvcY.update();
+
+    // display data 5 times per second, assuming no loop-time overrun
+    if (loopCount % static_cast<int>(loopFreq / 5) == 0)
+    {
+        printStatus(0.0, 0.0);
+    }
 
     // // Maintain a steady loop rate
     double loopdt = (micros() - loopstartTimestampUS) * 1e-6; // seconds
-    static uint16_t lastLogMs = 0;
-    uint16_t nowMs = millis();
-
     double targetPeriod = 1.0 / loopFreq;
     double remaining = targetPeriod - loopdt;
+    loopCount++;
     if (remaining > 0)
     {
         delayMicroseconds(static_cast<uint32_t>(remaining * 1e6));
-    }
-
-    if (nowMs - lastLogMs >= 500)
-    {
-        printStatus(0.0, 0.0);
-        Serial.print(F(" loopdt="));
-        Serial.println((micros() - loopstartTimestampUS) * 1e-6, 6);
-        lastLogMs = nowMs;
     }
 }
