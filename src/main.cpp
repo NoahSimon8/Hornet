@@ -140,7 +140,8 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
     // Serial.print(tvcX.commandedServoDeg(), 1);
     // Serial.print(", svy=");
     // Serial.print(tvcY.commandedServoDeg(), 1);
-    // Serial.println();
+
+    Serial.println();
 }
 
 // ---------- Main program ----------
@@ -259,6 +260,10 @@ void processSerialCommands()
         if (input.length() == 0)
         {
             stopped = !stopped;
+            if (stopped)
+                Serial.println(F("[fly] Stopped"));
+            else
+                Serial.println(F("[fly] Restarted"));
             return;
         }
 
@@ -378,7 +383,6 @@ void loop()
         centerTVC();
         tvcX.update();
         tvcY.update();
-        Serial.println(F("[fly] stopped."));
         delay(1000);
         return;
     }
