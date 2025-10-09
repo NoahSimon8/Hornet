@@ -24,23 +24,29 @@ struct QuaternionF
 class IMU
 {
 public:
-  explicit IMU(uint8_t i2cAddr = 0x4B) : _addr(i2cAddr) {}
+  explicit IMU(uint8_t i2cAddr = 0x4B, TwoWire &wirePort = Wire2)
+      : _addr(i2cAddr), _wire(&wirePort) {}
 
   bool begin()
   {
-    if (!_bno.begin_I2C(_addr))
+    _wire->begin();
+    if (!_bno.begin_I2C(_addr, _wire))
       return false;
 
     // Prefer AR/VR stabilized rotation vector; fall back to gyro-integrated
-    _bno.enableReport(SH2_ARVR_STABILIZED_RV, 5000); // 200 Hz â†’ 5000 Âµs? (BNO uses Âµs period)
-    _bno.enableReport(SH2_GYRO_INTEGRATED_RV, 5000);
+    _bno.enableReport(SH2_ARVR_STABILIZED_RV, 10000); // 200 Hz â†’ 5000 Âµs? (BNO uses Âµs period)
+    _bno.enableReport(SH2_GYRO_INTEGRATED_RV, 10000);
     return true;
   }
 
   // Call frequently to pull/freshen data
   void update()
   {
+    if (    _bno.wasReset()){
+      Serial.println(F("[fly] IMU was reset."));
+    }
     sh2_SensorValue_t val;
+    
     while (_bno.getSensorEvent(&val))
     {
       if (val.sensorId == SH2_ARVR_STABILIZED_RV || val.sensorId == SH2_GYRO_INTEGRATED_RV)
@@ -49,6 +55,7 @@ public:
         _quat.x = val.un.arvrStabilizedRV.i;
         _quat.y = val.un.arvrStabilizedRV.j;
         _quat.z = val.un.arvrStabilizedRV.k;
+        
         _euler = quatToEulerDeg(_quat);
         _hasData = true;
 
@@ -91,6 +98,7 @@ private:
   }
 
   uint8_t _addr;
+  TwoWire *_wire;
   Adafruit_BNO08x _bno;
   QuaternionF _quat{};
   Euler _euler{};

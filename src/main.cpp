@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <array>
+#include <Wire.h>
 #include "hardware/IMU.h"
 #include "hardware/Potentiometer.h"
 #include "hardware/PWMDriver.h"
@@ -32,7 +33,7 @@ PWMDriver pwm(PCA9685_ADDR);
 ESC esc1(pwm, CH_ESC1, 1000, 2000);
 ESC esc2(pwm, CH_ESC2, 1000, 2000);
 Potentiometer pot(PIN_POT);
-IMU imu(0x4B);
+IMU imu(0x4B, Wire2);
 
 // Linkage numbers — copy your real values here
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
@@ -96,31 +97,34 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
         Serial.println(F("[fly] IMU has no data."));
         return;
     }
-    Serial.print("thr_usA=");
-    Serial.print(thrUsA);
-    Serial.print(", thr_usB=");
-    Serial.print(thrUsB);
-    Serial.print(", pot=");
+    // Serial.print("thr_usA=");
+    // Serial.print(thrUsA);
+    // Serial.print(", thr_usB=");
+    // Serial.print(thrUsB);
+    // Serial.print(", pot=");
     Serial.print(pot.read01(), 3);
+    Serial.print(", ");
 
-    Serial.print(", yaw=");
-    Serial.print(state.yaw, 2);
-    Serial.print(", pitch=");
-    Serial.print(state.pitch, 2);
-    Serial.print(", roll=");
-    Serial.print(state.roll, 2);
-    Serial.print(", x=");
-    Serial.print(state.x, 2);
-    Serial.print(", y=");
-    Serial.print(state.y, 2);
-    Serial.print(", z=");
-    Serial.print(state.z, 2);
-    Serial.print(", xVel=");
-    Serial.print(state.xVel, 2);
-    Serial.print(", yVel=");
-    Serial.print(state.yVel, 2);
-    Serial.print(", zVel=");
-    Serial.print(state.zVel, 2);
+    Serial.print(pot.readRaw(), 3);
+
+    // Serial.print(", yaw=");
+    // Serial.print(state.yaw, 2);
+    // Serial.print(", pitch=");
+    // Serial.print(state.pitch, 2);
+    // Serial.print(", roll=");
+    // Serial.print(state.roll, 2);
+    // Serial.print(", x=");
+    // Serial.print(state.x, 2);
+    // Serial.print(", y=");
+    // Serial.print(state.y, 2);
+    // Serial.print(", z=");
+    // Serial.print(state.z, 2);
+    // Serial.print(", xVel=");
+    // Serial.print(state.xVel, 2);
+    // Serial.print(", yVel=");
+    // Serial.print(state.yVel, 2);
+    // Serial.print(", zVel=");
+    // Serial.print(state.zVel, 2);
     Serial.print(", xAcc=");
     Serial.print(state.xAcc, 2);
     Serial.print(", yAcc=");
@@ -128,18 +132,18 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
     Serial.print(", zAcc=");
     Serial.print(state.zAcc, 2);
 
-    Serial.print(", desPitch=");
-    Serial.print(desState.pitch, 2);
-    Serial.print(", y=");
-    Serial.print(desState.roll, 2);
-    Serial.print(", desZVel=");
-    Serial.print(desState.zVel, 2);
+    // Serial.print(", desPitch=");
+    // Serial.print(desState.pitch, 2);
+    // Serial.print(", y=");
+    // Serial.print(desState.roll, 2);
+    // Serial.print(", desZVel=");
+    // Serial.print(desState.zVel, 2);
 
-    Serial.print(", svx=");
-    Serial.print(tvcX.commandedServoDeg(), 1);
-    Serial.print(", svy=");
-    Serial.print(tvcY.commandedServoDeg(), 1);
-    Serial.println();
+    // Serial.print(", svx=");
+    // Serial.print(tvcX.commandedServoDeg(), 1);
+    // Serial.print(", svy=");
+    // Serial.print(tvcY.commandedServoDeg(), 1);
+    // Serial.println();
 }
 
 // ---------- Main program ----------
@@ -170,12 +174,26 @@ void setup()
     // centerTVC();
 
     // IMU
+    Wire2.begin();          // Teensy 4.1: SDA2=25, SCL2=24
+    Wire2.setClock(100000); // start at 100 kHz
+    Serial.println("I2C scan on Wire2...");
+    for (uint8_t addr = 1; addr < 127; addr++)
+    {
+        Wire2.beginTransmission(addr);
+        uint8_t err = Wire2.endTransmission();
+        if (err == 0)
+        {
+            Serial.printf("Found device at 0x%02X\n", addr);
+        }
+    }
+
     while (!imu.begin())
     {
         Serial.println(F("[fly] IMU failed to start."));
         delay(1000);
     }
-
+    Serial.println(F("[fly] IMU started"));
+    delay(100);
     ref.yaw0 = imu.yawDeg();
     ref.pitch0 = imu.pitchDeg();
     ref.roll0 = imu.rollDeg();
@@ -347,47 +365,57 @@ void loop()
     // For maintaining a steady loop rate
     double loopstartTimestampUS = micros();
 
-    // Check for serial commands
-    processSerialCommands();
-
-    // Refresh IMU data
+    // // Refresh IMU data
     imu.update();
     updateState();
 
-    // record timestamp for PID use
-    double IMUTimestampUs = micros();
-    double deltaTime = (IMUTimestampUs - prevIMUTimestampUs) * 1e-6; // seconds
-    prevIMUTimestampUs = IMUTimestampUs;
+    // // record timestamp for PID use
+    // double IMUTimestampUs = micros();
+    // double deltaTime = (IMUTimestampUs - prevIMUTimestampUs) * 1e-6; // seconds
+    // prevIMUTimestampUs = IMUTimestampUs;
 
-    // get desired thrust angles
-    std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
+    // // get desired thrust angles
+    // std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
-    // Apply to servos as desired thrust angles
-    tvcX.setDesiredThrustDeg(pidOut[0]);
-    tvcY.setDesiredThrustDeg(pidOut[1]);
+    // // Apply to servos as desired thrust angles
+    // tvcX.setDesiredThrustDeg(pidOut[0]);
+    // tvcY.setDesiredThrustDeg(pidOut[1]);
 
-    // get base throttle
-    float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
+    // // get base throttle
+    // float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
 
-    // calculate yaw correction
-    float yawAdjust = yawPID(deltaTime);
-    float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
-    float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
+    // // calculate yaw correction
+    // float yawAdjust = yawPID(deltaTime);
+    // float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
+    // float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
-    // Apply to ESCs
-    uint16_t throttleUsA = static_cast<uint16_t>(util::mapFloat(throttle01a, 0.0f, 1.0f, 1000, 2000));
-    uint16_t throttleUsB = static_cast<uint16_t>(util::mapFloat(throttle01b, 0.0f, 1.0f, 1000, 2000));
-    esc1.setMicroseconds(throttleUsA);
-    esc2.setMicroseconds(throttleUsB);
+    // // Apply to ESCs
+    // uint16_t throttleUsA = static_cast<uint16_t>(util::mapFloat(throttle01a, 0.0f, 1.0f, 1000, 2000));
+    // uint16_t throttleUsB = static_cast<uint16_t>(util::mapFloat(throttle01b, 0.0f, 1.0f, 1000, 2000));
+    // esc1.setMicroseconds(throttleUsA);
+    // esc2.setMicroseconds(throttleUsB);
 
-    // Apply servo updates (slew limiting + PWM)
-    tvcX.update();
-    tvcY.update();
+    // // Apply servo updates (slew limiting + PWM)
+    // tvcX.update();
+    // tvcY.update();
 
-    // Print a quick status line
-    printStatus(throttleUsA, throttleUsB);
-
-    // Maintain a steady loop rate
+    // // Maintain a steady loop rate
     double loopdt = (micros() - loopstartTimestampUS) * 1e-6; // seconds
-    delay(((1 / loopFreq) - loopdt) * 1000.0);
+    static uint16_t lastLogMs = 0;
+    uint16_t nowMs = millis();
+
+    double targetPeriod = 1.0 / loopFreq;
+    double remaining = targetPeriod - loopdt;
+    if (remaining > 0)
+    {
+        delayMicroseconds(static_cast<uint32_t>(remaining * 1e6));
+    }
+
+    if (nowMs - lastLogMs >= 500)
+    {
+        printStatus(0.0, 0.0);
+        Serial.print(F(" loopdt="));
+        Serial.println((micros() - loopstartTimestampUS) * 1e-6, 6);
+        lastLogMs = nowMs;
+    }
 }
