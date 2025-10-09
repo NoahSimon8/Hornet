@@ -59,7 +59,9 @@ public:
         _euler = quatToEulerDeg(_quat);
         _hasData = true;
 
-        // FILL IN LINEAR STRUCT
+        _linearAccel.x = val.un.linearAcceleration.x;
+        _linearAccel.y = val.un.linearAcceleration.y;
+        _linearAccel.z = val.un.linearAcceleration.z;
       }
     }
   }
