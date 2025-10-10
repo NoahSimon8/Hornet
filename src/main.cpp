@@ -24,9 +24,16 @@ constexpr uint8_t CH_SERVO_Y = 15;
 
 const float maxThrottleN = 2.5; // newtons, this is an estimate
 const float maxGimble = 12.0;   // degrees, this is an estimate
+const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
 const float angleXNeutral = 108.0f;
 const float angleYNeutral = 47.0f;
 const double loopFreq = 100.0; // Hz
+constexpr float DEG2RAD_F = 0.0174532925f;
+
+// Mounting offset between IMU sensor frame and rocket body frame (deg)
+constexpr float SENSOR_TO_BODY_YAW_DEG = 45.0f;
+constexpr float SENSOR_TO_BODY_PITCH_DEG = -90.0f;
+constexpr float SENSOR_TO_BODY_ROLL_DEG = 0.0f;
 
 // ---------- Global hardware objects ----------
 PWMDriver pwm(PCA9685_ADDR);
@@ -45,7 +52,7 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f, angleYNeutral, -
 // ---------- PID controllers ----------
 // PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
 // PID pidPitch(0.8, 0.05, 0.1); // needs tuning
-// PID pidYaw(0.8, 0.0, 0.0);    // needs tuning
+// PID pidHeading(0.8, 0.0, 0.0);    // needs tuning
 // PID pidX(1, 0, 0);            // needs tuning
 // PID pidY(1, 0, 0);            // needs tuning
 // PID pidZ(1, 0, 0);            // needs tuning
@@ -53,7 +60,7 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f, angleYNeutral, -
 
 PID pidRoll(0, 0, 0);      // needs tuning
 PID pidPitch(0, 0, 0);     // needs tuning
-PID pidYaw(0, 0, 0);       // needs tuning
+PID pidHeading(0, 0, 0);   // needs tuning
 PID pidX(0, 0, 0);         // needs tuning
 PID pidY(0, 0, 0);         // needs tuning
 PID pidZ(0, 0, 0);         // needs tuning
@@ -69,8 +76,9 @@ struct Ref
 
 struct State
 {
-    float yaw{0}, pitch{0}, roll{0};
-    float yawRate{0}, pitchRate{0}, rollRate{0};
+    float pitch{0}, roll{0};
+    float heading{0}, tiltX{0}, tiltY{0};
+    float headingRate{0}, pitchRate{0}, rollRate{0};
     float x{0}, y{0}, z{0};
     float xVel{0}, yVel{0}, zVel{0};
     float xAcc{0}, yAcc{0}, zAcc{0};
@@ -78,7 +86,8 @@ struct State
 
 struct desState
 {
-    float yaw{0}, pitch{0}, roll{0};
+    float pitch{0}, roll{0};
+    float heading{0}, tiltX{0}, tiltY{0};
     float x{0}, y{0}, z{0};
     float zVel{0};
 } desState;
@@ -96,7 +105,6 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
     if (!imu.hasData())
     {
         Serial.println(F("[fly] IMU has no data."));
-        return;
     }
     // Serial.print("thr_usA=");
     // Serial.print(thrUsA);
@@ -106,10 +114,21 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
 
     // Serial.print(", yaw=");
     // Serial.print(state.yaw, 2);
-    // Serial.print(", pitch=");
-    // Serial.print(state.pitch, 2);
-    // Serial.print(", roll=");
-    // Serial.print(state.roll, 2);
+    const auto proj = imu.projectedAngles();
+    Serial.print(", pitch=");
+    Serial.print(state.pitch, 2);
+    Serial.print(", ");
+    Serial.print(proj.tiltAboutX, 2);
+    Serial.print(", roll=");
+    Serial.print(state.roll, 2);
+    Serial.print(", ");
+    Serial.print(proj.tiltAboutY, 2);
+    Serial.print(", heading=");
+    Serial.print(proj.heading, 2);
+
+    Serial.print(", rvAcc=");
+    Serial.print(static_cast<int>(imu.rotationAccuracy()));
+
     // Serial.print(", x=");
     // Serial.print(state.x, 2);
     // Serial.print(", y=");
@@ -122,12 +141,12 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
     // Serial.print(state.yVel, 2);
     // Serial.print(", zVel=");
     // Serial.print(state.zVel, 2);
-    Serial.print(", xAcc=");
-    Serial.print(state.xAcc, 2);
-    Serial.print(", yAcc=");
-    Serial.print(state.yAcc, 2);
-    Serial.print(", zAcc=");
-    Serial.print(state.zAcc, 2);
+    // Serial.print(", xAcc=");
+    // Serial.print(state.xAcc, 2);
+    // Serial.print(", yAcc=");
+    // Serial.print(state.yAcc, 2);
+    // Serial.print(", zAcc=");
+    // Serial.print(state.zAcc, 2);
 
     // Serial.print(", desPitch=");
     // Serial.print(desState.pitch, 2);
@@ -190,10 +209,26 @@ void setup()
         delay(1000);
     }
     Serial.println(F("[fly] IMU started"));
-    delay(100);
-    ref.yaw0 = imu.yawDeg();
-    ref.pitch0 = imu.pitchDeg();
-    ref.roll0 = imu.rollDeg();
+    imu.setSensorToBodyEuler(SENSOR_TO_BODY_YAW_DEG, SENSOR_TO_BODY_PITCH_DEG, SENSOR_TO_BODY_ROLL_DEG);
+
+    // Wait for valid data
+    imu.update();
+    while (!imu.hasData())
+    {
+        imu.update();
+        Serial.println(F("[fly] waiting for IMU data..."));
+        delay(500);
+    }
+
+    // ref.yaw0 = imu.yawDeg();
+    // ref.pitch0 = imu.pitchDeg();
+    // ref.roll0 = imu.rollDeg();
+    Serial.print(F("[fly] reference orientation: yaw0="));
+    Serial.print(ref.yaw0);
+    Serial.print(F(", pitch0="));
+    Serial.print(ref.pitch0);
+    Serial.print(F(", roll0="));
+    Serial.println(ref.roll0);
     ref.set = true;
 
     Serial.println(F("[fly] reference orientation captured."));
@@ -301,7 +336,6 @@ std::array<float, 2> rotationalPID(float dt)
 {
     // Compute PID outputs
     std::array<float, 2> out{};
-
     out[0] = pidRoll.calculate(desState.roll, state.roll, dt);
     out[1] = pidPitch.calculate(desState.pitch, state.pitch, dt);
 
@@ -314,9 +348,16 @@ std::array<float, 2> lateralPID(float dt)
     // outerloop on position
     if (loopCount % 3 == 0)
     {
-        // Compute PID outputs
-        desState.roll = pidX.calculate(desState.x, 0, dt);
-        desState.pitch = pidY.calculate(desState.y, 0, dt);
+        // Compute desired tilt in world frame
+        desState.tiltX = pidX.calculate(desState.x, 0, dt);
+        desState.tiltY = pidY.calculate(desState.y, 0, dt);
+
+        // Rotate desired tilt from world frame to body frame
+        const float headingRad = state.heading * DEG2RAD_F;
+        desState.roll = cosf(headingRad) * desState.tiltX + sinf(headingRad) * desState.tiltY;
+        desState.pitch = -sinf(headingRad) * desState.tiltX + cosf(headingRad) * desState.tiltY;
+        desState.roll = util::clamp(desState.roll, -maxGimble, +maxGimble);
+        desState.pitch = util::clamp(desState.pitch, -maxGimble, +maxGimble);
     }
     // innerloop on rotation
     return rotationalPID(dt);
@@ -342,24 +383,22 @@ float potentiometerThrottle()
 }
 
 // returns a desired constant, -1..1 to add to ESC 1, subtract from ESC 2
-float yawPID(float dt)
+float headingPID(float dt)
 {
-    float yawError = desState.yaw - state.yaw;
-    if (yawError > 180.0f)
-        yawError -= 360.0f;
-    if (yawError < -180.0f)
-        yawError += 360.0f;
+    float headingError = desState.heading - state.heading;
+    if (headingError > 180.0f)
+        headingError -= 360.0f;
+    if (headingError < -180.0f)
+        headingError += 360.0f;
 
-    float out = pidYaw.calculate(0.0f, -yawError, dt); // negative error maybe?
+    float out = pidHeading.calculate(0.0f, -headingError, dt); // negative error maybe?
     return out;
 }
 
 void updateState()
 {
-    if (!imu.hasData())
-        return;
+
     auto e = imu.euler();
-    state.yaw = e.yaw - ref.yaw0;
     state.pitch = e.pitch - ref.pitch0;
     state.roll = e.roll - ref.roll0;
 
@@ -407,7 +446,7 @@ void loop()
     float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
 
     // calculate yaw correction
-    float yawAdjust = yawPID(deltaTime);
+    float yawAdjust = headingPID(deltaTime);
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
@@ -422,7 +461,7 @@ void loop()
     tvcY.update();
 
     // display data 5 times per second, assuming no loop-time overrun
-    if (loopCount % static_cast<int>(loopFreq / 5) == 0)
+    if (loopCount % static_cast<int>(loopFreq / 1) == 0)
     {
         printStatus(0.0, 0.0);
     }
