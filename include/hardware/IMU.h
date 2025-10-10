@@ -33,10 +33,10 @@ struct BodyAxesF
 
 struct ProjectedAngles
 {
-  float tiltAboutX{0};   // deg, rotation about body X (roll)
-  float tiltAboutY{0};   // deg, rotation about body Y (pitch)
-  float totalTilt{0};    // deg from vertical
-  float heading{0};      // deg, yaw derived from forward vector projection
+  float tiltAboutX{0}; // deg, rotation about body X (roll)
+  float tiltAboutY{0}; // deg, rotation about body Y (pitch)
+  float totalTilt{0};  // deg from vertical
+  float heading{0};    // deg, yaw derived from forward vector projection
 };
 
 class IMU
@@ -53,7 +53,7 @@ public:
 
     // Enable the reports this application consumes
     _bno.enableReport(SH2_ROTATION_VECTOR, 10000);
-    _bno.enableReport(SH2_ACCELEROMETER, 10000);
+    _bno.enableReport(SH2_LINEAR_ACCELERATION, 10000);
     return true;
   }
 
@@ -89,10 +89,24 @@ public:
         _hasData = true;
         break;
 
-      case SH2_ACCELEROMETER:
-        _rawAccel.x = val.un.accelerometer.x;
-        _rawAccel.y = val.un.accelerometer.y;
-        _rawAccel.z = val.un.accelerometer.z;
+      case SH2_LINEAR_ACCELERATION:
+        _rawAccel.x = val.un.linearAcceleration.x;
+        _rawAccel.y = val.un.linearAcceleration.y;
+        _rawAccel.z = val.un.linearAcceleration.z;
+
+        {
+          float bx, by, bz;
+          rotateVector(_sensorToBody, _rawAccel.x, _rawAccel.y, _rawAccel.z, bx, by, bz);
+          _accelBody.x = bx;
+          _accelBody.y = by;
+          _accelBody.z = bz;
+
+          float wx, wy, wz;
+          rotateVector(_bodyQuat, _accelBody.x, _accelBody.y, _accelBody.z, wx, wy, wz);
+          _accelWorld.x = wx;
+          _accelWorld.y = wy;
+          _accelWorld.z = wz;
+        }
         break;
 
       default:
@@ -139,7 +153,10 @@ public:
   QuaternionF quat() const { return _quat; }
   QuaternionF bodyQuat() const { return _bodyQuat; }
   Euler euler() const { return _euler; }
-  LinearAccel accelerometer() const { return _rawAccel; }
+  LinearAccel accelerometer() const { return _accelWorld; }
+  LinearAccel accelerometerWorld() const { return _accelWorld; }
+  LinearAccel accelerometerBody() const { return _accelBody; }
+  LinearAccel accelerometerSensor() const { return _rawAccel; }
   uint8_t rotationAccuracy() const { return _rvAccuracy; }
   float rotationAccuracyRad() const { return _rvAccuracyRad; }
   bool isFullyCalibrated() const { return _rvAccuracy >= 3; }
@@ -284,6 +301,8 @@ private:
   QuaternionF _bodyQuat{};
   Euler _euler{};
   LinearAccel _rawAccel{};
+  LinearAccel _accelBody{};
+  LinearAccel _accelWorld{};
   bool _hasData{false};
   uint8_t _rvAccuracy{0};
   float _rvAccuracyRad{0.0f};

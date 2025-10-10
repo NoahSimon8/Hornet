@@ -115,38 +115,40 @@ void printStatus(uint16_t thrUsA, uint16_t thrUsB)
     // Serial.print(", yaw=");
     // Serial.print(state.yaw, 2);
     const auto proj = imu.projectedAngles();
-    Serial.print(", pitch=");
-    Serial.print(state.pitch, 2);
-    Serial.print(", ");
-    Serial.print(proj.tiltAboutX, 2);
-    Serial.print(", roll=");
-    Serial.print(state.roll, 2);
-    Serial.print(", ");
-    Serial.print(proj.tiltAboutY, 2);
-    Serial.print(", heading=");
-    Serial.print(proj.heading, 2);
+    // Serial.print(", pitch=");
+    // Serial.print(state.pitch, 2);
+    // Serial.print(", ");
+    // Serial.print(proj.tiltAboutX, 2);
+    // Serial.print(", roll=");
+    // Serial.print(state.roll, 2);
+    // Serial.print(", ");
+    // Serial.print(proj.tiltAboutY, 2);
+    // Serial.print(", heading=");
+    // Serial.print(proj.heading, 2);
 
     Serial.print(", rvAcc=");
     Serial.print(static_cast<int>(imu.rotationAccuracy()));
 
-    // Serial.print(", x=");
-    // Serial.print(state.x, 2);
-    // Serial.print(", y=");
-    // Serial.print(state.y, 2);
-    // Serial.print(", z=");
-    // Serial.print(state.z, 2);
+    Serial.print(", x=");
+    Serial.print(state.x, 2);
+    Serial.print(", y=");
+    Serial.print(state.y, 2);
+    Serial.print(", z=");
+    Serial.print(state.z, 
+        
+        2);
     // Serial.print(", xVel=");
     // Serial.print(state.xVel, 2);
     // Serial.print(", yVel=");
     // Serial.print(state.yVel, 2);
     // Serial.print(", zVel=");
     // Serial.print(state.zVel, 2);
-    // Serial.print(", xAcc=");
-    // Serial.print(state.xAcc, 2);
-    // Serial.print(", yAcc=");
-    // Serial.print(state.yAcc, 2);
-    // Serial.print(", zAcc=");
-    // Serial.print(state.zAcc, 2);
+    Serial.print(", xAcc=");
+    Serial.print(state.xAcc, 2);
+    Serial.print(", yAcc=");
+    Serial.print(state.yAcc, 2);
+    Serial.print(", zAcc=");
+    Serial.print(state.zAcc, 2);
 
     // Serial.print(", desPitch=");
     // Serial.print(desState.pitch, 2);
@@ -180,14 +182,11 @@ void setup()
     }
     Serial.println(F("[fly] starting setup..."));
 
-    // I/O
-    pot.begin();
-
     // PWM driver for servos/ESC
     pwm.begin(50.0f);
 
     // Bring servos to neutral
-    // centerTVC();
+    centerTVC();
 
     // IMU
     Wire2.begin();          // Teensy 4.1: SDA2=25, SCL2=24
@@ -376,12 +375,6 @@ float verticalPID(float dt)
     return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
 }
 
-// returns desired throttle 0..1
-float potentiometerThrottle()
-{
-    return util::clamp(pot.read01(), 0.0f, 1.0f);
-}
-
 // returns a desired constant, -1..1 to add to ESC 1, subtract from ESC 2
 float headingPID(float dt)
 {
@@ -435,6 +428,13 @@ void loop()
     double deltaTime = (IMUTimestampUs - prevIMUTimestampUs) * 1e-6; // seconds
     prevIMUTimestampUs = IMUTimestampUs;
 
+    state.xVel = state.xAcc * deltaTime + state.xVel;
+    state.yVel = state.yAcc * deltaTime + state.yVel;
+    state.zVel = state.zAcc * deltaTime + state.zVel;
+    state.x = state.xVel * deltaTime + state.x;
+    state.y = state.yVel * deltaTime + state.y;
+    state.z = state.zVel * deltaTime + state.z;
+
     // get desired thrust angles
     std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
@@ -443,7 +443,7 @@ void loop()
     tvcY.setDesiredThrustDeg(pidOut[1]);
 
     // get base throttle
-    float throttle01 = potentiometerThrottle(); // swap to verticalPID(z, dt) for altitude hold
+    float throttle01 = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
 
     // calculate yaw correction
     float yawAdjust = headingPID(deltaTime);
@@ -461,7 +461,7 @@ void loop()
     tvcY.update();
 
     // display data 5 times per second, assuming no loop-time overrun
-    if (loopCount % static_cast<int>(loopFreq / 1) == 0)
+    if (loopCount % static_cast<int>(loopFreq / 2) == 0)
     {
         printStatus(0.0, 0.0);
     }
