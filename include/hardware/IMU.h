@@ -37,9 +37,7 @@ public:
       return false;
 
     // Enable the reports this application consumes
-    _bno.enableReport(SH2_ARVR_STABILIZED_RV, 10000);
-    _bno.enableReport(SH2_GYRO_INTEGRATED_RV, 10000);
-    _bno.enableReport(SH2_LINEAR_ACCELERATION, 10000);
+    _bno.enableReport(SH2_ROTATION_VECTOR, 10000);
     _bno.enableReport(SH2_ACCELEROMETER, 10000);
     return true;
   }
@@ -61,21 +59,15 @@ public:
     {
       switch (val.sensorId)
       {
-      case SH2_ARVR_STABILIZED_RV:
-        _quat.w = val.un.arvrStabilizedRV.real;
-        _quat.x = val.un.arvrStabilizedRV.i;
-        _quat.y = val.un.arvrStabilizedRV.j;
-        _quat.z = val.un.arvrStabilizedRV.k;
-        _rvAccuracyRad = val.un.arvrStabilizedRV.accuracy;
+      case SH2_ROTATION_VECTOR:
+        _quat.w = val.un.rotationVector.real;
+        _quat.x = val.un.rotationVector.i;
+        _quat.y = val.un.rotationVector.j;
+        _quat.z = val.un.rotationVector.k;
+        _rvAccuracyRad = val.un.rotationVector.accuracy;
         _rvAccuracy = val.status & 0x03;
         _euler = quatToEulerDeg(_quat);
         _hasData = true;
-        break;
-
-      case SH2_LINEAR_ACCELERATION:
-        _linearAccel.x = val.un.linearAcceleration.x;
-        _linearAccel.y = val.un.linearAcceleration.y;
-        _linearAccel.z = val.un.linearAcceleration.z;
         break;
 
       case SH2_ACCELEROMETER:
@@ -127,7 +119,6 @@ public:
   bool hasData() const { return _hasData; }
   QuaternionF quat() const { return _quat; }
   Euler euler() const { return _euler; }
-  LinearAccel linearAccel() const { return _linearAccel; }
   LinearAccel accelerometer() const { return _rawAccel; }
   uint8_t rotationAccuracy() const { return _rvAccuracy; }
   float rotationAccuracyRad() const { return _rvAccuracyRad; }
@@ -175,7 +166,6 @@ private:
   Adafruit_BNO08x _bno;
   QuaternionF _quat{};
   Euler _euler{};
-  LinearAccel _linearAccel{};
   LinearAccel _rawAccel{};
   bool _hasData{false};
   uint8_t _rvAccuracy{0};

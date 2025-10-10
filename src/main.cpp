@@ -172,7 +172,7 @@ void setup()
 
     // IMU
     Wire2.begin();          // Teensy 4.1: SDA2=25, SCL2=24
-    Wire2.setClock(100000); // start at 100 kHz
+    Wire2.setClock(400000); // start at 100 kHz
     Serial.println("I2C scan on Wire2...");
     for (uint8_t addr = 1; addr < 127; addr++)
     {
@@ -365,7 +365,7 @@ void updateState()
 
     // MEKF data for position and rates
 
-    auto la = imu.linearAccel();
+    auto la = imu.accelerometer();
     state.xAcc = la.x;
     state.yAcc = la.y;
     state.zAcc = la.z;
