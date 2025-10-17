@@ -78,10 +78,8 @@ struct State
 {
     float pitch{0}, roll{0};
     float heading{0}, tiltX{0}, tiltY{0};
-    float headingRate{0}, pitchRate{0}, rollRate{0};
     float x{0}, y{0}, z{0};
     float xVel{0}, yVel{0}, zVel{0};
-    float xAcc{0}, yAcc{0}, zAcc{0};
 } state;
 
 struct desState
@@ -94,68 +92,52 @@ struct desState
 
 // ---------- Global state ----------
 
+double loopstartTimestampUS = 0.0;
 double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
 bool stopped = false;
 
 // ---------- data logging ----------
 
+void printWithComma(float value, int precision=3)
+{
+    Serial.print(value, precision);
+    Serial.print(",");
+}
+
 void printStatus(float throttle01A, float throttle01B)
 {
-    if (!imu.hasData())
-    {
-        Serial.println(F("[fly] IMU has no data."));
-    }
-    Serial.print("throttleA=");
-    Serial.print(throttle01A);
-    Serial.print(", throttleB=");
-    Serial.print(throttle01B);
+    // if (!imu.hasData())
+    // {
+    //     Serial.println(F("[fly] IMU has no data."));
+    // }
 
-    const auto proj = imu.projectedAngles();
-    Serial.print(", pitch=");
-    Serial.print(state.pitch, 2);
-    Serial.print(", ");
-    Serial.print(proj.tiltAboutX, 2);
-    Serial.print(", roll=");
-    Serial.print(state.roll, 2);
-    Serial.print(", ");
-    Serial.print(proj.tiltAboutY, 2);
-    Serial.print(", heading=");
-    Serial.print(proj.heading, 2);
+    printWithComma(throttle01A);
+    printWithComma(throttle01B);
+    printWithComma(tvcX.commandedServoDeg());
+    printWithComma(tvcY.commandedServoDeg());
+    printWithComma(static_cast<int>(imu.rotationAccuracy()));
 
-    Serial.print(", rvAcc=");
-    Serial.print(static_cast<int>(imu.rotationAccuracy()));
+    printWithComma(state.pitch);
+    printWithComma(state.roll);
+    printWithComma(state.tiltX);
+    printWithComma(state.tiltY);
+    printWithComma(state.heading);
+    printWithComma(state.x);
+    printWithComma(state.y);
+    printWithComma(state.z);
+    printWithComma(state.xVel);
+    printWithComma(state.yVel);
+    printWithComma(state.zVel);
 
-    // Serial.print(", x=");
-    // Serial.print(state.x, 2);
-    // Serial.print(", y=");
-    // Serial.print(state.y, 2);
-    // Serial.print(", z=");
-    // Serial.print(state.z, 2);
-    // Serial.print(", xVel=");
-    // Serial.print(state.xVel, 2);
-    // Serial.print(", yVel=");
-    // Serial.print(state.yVel, 2);
-    // Serial.print(", zVel=");
-    // Serial.print(state.zVel, 2);
-    // Serial.print(", xAcc=");
-    // Serial.print(state.xAcc, 2);
-    // Serial.print(", yAcc=");
-    // Serial.print(state.yAcc, 2);
-    // Serial.print(", zAcc=");
-    // Serial.print(state.zAcc, 2);
+    printWithComma(desState.pitch);
+    printWithComma(desState.roll);
+    printWithComma(desState.zVel);
+    printWithComma(desState.tiltX);
+    printWithComma(desState.tiltY);
+    printWithComma(desState.heading);
 
-    // Serial.print(", desPitch=");
-    // Serial.print(desState.pitch, 2);
-    // Serial.print(", y=");
-    // Serial.print(desState.roll, 2);
-    // Serial.print(", desZVel=");
-    // Serial.print(desState.zVel, 2);
-
-    Serial.print(", svx=");
-    Serial.print(tvcX.commandedServoDeg(), 1);
-    Serial.print(", svy=");
-    Serial.print(tvcY.commandedServoDeg(), 1);
+    printWithComma((loopstartTimestampUS) / 1000000.0, 6);
 
     Serial.println();
 }
@@ -175,7 +157,8 @@ void setup()
     while (!Serial && millis() < 5000)
     {
     }
-    Serial.println(F("[fly] starting setup..."));
+    // Header for CSV logging
+    Serial.println("throttleA,throttleB,tvcX,tvcY,rvAcc,pitch,roll,tiltX,tiltY,heading,x,y,z,xVel,yVel,zVel,desPitch,desRoll,desZVel,desTiltX,desTiltY,desHeading,time");
 
     // PWM driver for servos/ESC
     pwm.begin(50.0f);
@@ -401,7 +384,7 @@ void updateState()
 void loop()
 {
     // For maintaining a steady loop rate
-    double loopstartTimestampUS = micros();
+    loopstartTimestampUS = micros();
     processSerialCommands();
     if (stopped)
     {
