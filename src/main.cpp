@@ -92,7 +92,7 @@ struct desState
 
 // ---------- Global state ----------
 
-double loopstartTimestampUS = 0.0;
+double loopTime = 0.0;
 double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
 bool stopped = false;
@@ -137,7 +137,7 @@ void printStatus(float throttle01A, float throttle01B)
     printWithComma(desState.tiltY);
     printWithComma(desState.heading);
 
-    printWithComma((loopstartTimestampUS) / 1000000.0, 6);
+    printWithComma((loopTime) / 1000000.0, 6);
 
     Serial.println();
 }
@@ -158,7 +158,7 @@ void setup()
     {
     }
     // Header for CSV logging
-    Serial.println("# throttleA,throttleB,tvcX,tvcY,rvAcc,pitch,roll,tiltX,tiltY,heading,x,y,z,xVel,yVel,zVel,desPitch,desRoll,desZVel,desTiltX,desTiltY,desHeading,time");
+    Serial.println("# throttleA,throttleB,tvcX,tvcY,rvAcc,pitch,roll,tiltX,tiltY,heading,x,y,z,xVel,yVel,zVel,desPitch,desRoll,desZVel,desTiltX,desTiltY,desHeading,loopTime");
 
     // PWM driver for servos/ESC
     pwm.begin(50.0f);
@@ -389,7 +389,7 @@ void updateState()
 void loop()
 {
     // For maintaining a steady loop rate
-    loopstartTimestampUS = micros();
+    double loopstartTimestampUS = micros();
     processSerialCommands();
     if (stopped)
     {
@@ -448,4 +448,5 @@ void loop()
     {
         delayMicroseconds(static_cast<uint32_t>(remaining * 1e6));
     }
+    loopTime = (micros() - loopstartTimestampUS);
 }

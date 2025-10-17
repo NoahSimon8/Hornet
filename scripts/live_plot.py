@@ -89,10 +89,16 @@ def main():
     ap.add_argument(
         "--cols",
         nargs="*",
-        default=["heading", "tiltX", "tiltY"],
+        default=["heading", "tiltX", "tiltY", "loopTime"],
         help="names to plot; must match CSV header",
     )
     ap.add_argument("--maxpts", type=int, default=2000)
+    ap.add_argument(
+        "--scroll-window",
+        type=float,
+        default=25.0,
+        help="seconds shown on the x-axis; <=0 keeps expanding",
+    )
     ap.add_argument("--log", help="write diagnostic output to this file")
     args = ap.parse_args()
 
@@ -188,29 +194,42 @@ def main():
 
     pg.setConfigOptions(antialias=True)
 
-    signal_names = list(args.cols[:3])
-    while len(signal_names) < 3:
+    signal_names = list(args.cols[:4])
+    while len(signal_names) < 4:
         signal_names.append("")
+
+    y_ranges = {
+        "heading": (-200, 200),
+        "tiltX": (-30, 30),
+        "tiltY": (-30, 30),
+        "loopTime": (0.0, 0.1),
+    }
+
+    scroll_window = args.scroll_window
 
     plot_widgets = []
     for idx_signal, name in enumerate(signal_names):
         title = f"{name} vs time" if name else f"Signal {idx_signal + 1}"
         widget = pg.PlotWidget(title=title)
         widget.showGrid(x=True, y=True, alpha=0.3)
+        widget.enableAutoRange(x=scroll_window <= 0, y=False)
+        target_range = y_ranges.get(name)
+        if target_range:
+            low, high = target_range
+            widget.setYRange(low, high, padding=0)
+            widget.setLimits(yMin=low, yMax=high)
+        if scroll_window > 0:
+            widget.setXRange(0, scroll_window, padding=0)
         plot_widgets.append(widget)
         layout.addWidget(widget, idx_signal, 0, 1, 1)
 
     # Data buffers
     maxpts = args.maxpts
     t_buf = deque(maxlen=maxpts)
-    x_buf = deque(maxlen=maxpts)
-    y_buf = deque(maxlen=maxpts)
-    z_buf = deque(maxlen=maxpts)
+    data_buffers = [deque(maxlen=maxpts) for _ in signal_names]
 
     # Curves
-    curve_x = plot_widgets[0].plot([])
-    curve_y = plot_widgets[1].plot([]) if len(plot_widgets) > 1 else None
-    curve_z = plot_widgets[2].plot([]) if len(plot_widgets) > 2 else None
+    curves = [widget.plot([]) for widget in plot_widgets]
 
     signal_keys = tuple(signal_names)
 
@@ -244,42 +263,25 @@ def main():
                     except Exception:
                         return float("nan")
 
-                xv = sample_value(signal_keys[0])
-                yv = sample_value(signal_keys[1]) if len(signal_keys) > 1 else float("nan")
-                zv = sample_value(signal_keys[2]) if len(signal_keys) > 2 else float("nan")
-
                 t_buf.append(t)
-                x_buf.append(xv)
-                y_buf.append(yv)
-                z_buf.append(zv)
+                for buf, key in zip(data_buffers, signal_keys):
+                    buf.append(sample_value(key))
 
             if len(t_buf) > 2:
                 t0 = t_buf[0]
                 tt = [ti - t0 for ti in t_buf]
-                xs = list(x_buf)
-                ys = list(y_buf)
-                zs = list(z_buf)
-
-                has_x = any(not math.isnan(v) for v in xs)
-                has_y = any(not math.isnan(v) for v in ys)
-                has_z = any(not math.isnan(v) for v in zs)
-
-                if has_x:
-                    curve_x.setData(tt, xs)
-                else:
-                    curve_x.clear()
-
-                if curve_y is not None:
-                    if has_y:
-                        curve_y.setData(tt, ys)
+                for curve, buf in zip(curves, data_buffers):
+                    values = list(buf)
+                    if any(not math.isnan(v) for v in values):
+                        curve.setData(tt, values)
                     else:
-                        curve_y.clear()
+                        curve.clear()
 
-                if curve_z is not None:
-                    if has_z:
-                        curve_z.setData(tt, zs)
-                    else:
-                        curve_z.clear()
+                if scroll_window > 0 and tt:
+                    xmin = max(0.0, tt[-1] - scroll_window)
+                    xmax = xmin + scroll_window
+                    for widget in plot_widgets:
+                        widget.setXRange(xmin, xmax, padding=0)
         except Exception:
             logger.exception("Unhandled error in update loop")
             _show_error("Teensy Live Plot", "An internal error occurred. See log for details.", QtWidgets=QtWidgets)
