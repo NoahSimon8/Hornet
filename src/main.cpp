@@ -25,8 +25,8 @@ constexpr uint8_t CH_SERVO_Y = 15;
 const float maxThrottleN = 2.5; // newtons, this is an estimate
 const float maxGimble = 12.0;   // degrees, this is an estimate
 const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
-const float angleXNeutral = 108.0f;
-const float angleYNeutral = 47.0f;
+const float angleXNeutral = 180.0f;
+const float angleYNeutral = 0.0f;
 const double loopFreq = 100.0; // Hz
 constexpr float DEG2RAD_F = 0.0174532925f;
 
@@ -418,8 +418,9 @@ void loop()
     std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
     // Apply to servos as desired thrust angles
-    tvcX.setDesiredThrustDeg(pidOut[0]);
-    tvcY.setDesiredThrustDeg(pidOut[1]);
+    // tvcX.setDesiredThrustDeg(pidOut[0]);
+    // tvcY.setDesiredThrustDeg(pidOut[1]);
+    centerTVC();
 
     // Apply servo updates (slew limiting + PWM)
     tvcX.update();
@@ -433,8 +434,8 @@ void loop()
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
-    throttle01a = 0.05;
-    throttle01b = 0.05;
+    throttle01a = 0.0;
+    throttle01b = 0.0;
 
     esc1.setThrottle01(throttle01a);
     esc2.setThrottle01(throttle01b);
