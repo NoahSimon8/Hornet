@@ -6,7 +6,8 @@
 class PWMDriver
 {
 public:
-  explicit PWMDriver(uint8_t i2cAddr = 0x40) : _pwm(i2cAddr) {}
+  explicit PWMDriver(uint8_t i2cAddr = 0x40, TwoWire &wire = Wire)
+      : _pwm(i2cAddr, wire) {}
 
   bool begin(float freqHz = 50.0f)
   {

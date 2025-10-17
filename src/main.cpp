@@ -36,7 +36,7 @@ constexpr float SENSOR_TO_BODY_PITCH_DEG = -90.0f;
 constexpr float SENSOR_TO_BODY_ROLL_DEG = 0.0f;
 
 // ---------- Global hardware objects ----------
-PWMDriver pwm(PCA9685_ADDR);
+PWMDriver pwm(PCA9685_ADDR, Wire);
 ESC esc1(pwm, CH_ESC1, 1000, 2000);
 ESC esc2(pwm, CH_ESC2, 1000, 2000);
 Potentiometer pot(A2);

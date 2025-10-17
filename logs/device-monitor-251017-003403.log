@@ -1,0 +1,6 @@
+00:34:03.238 > # throttleA,throttleB,tvcX,tvcY,rvAcc,pitch,roll,tiltX,tiltY,heading,x,y,z,xVel,yVel,zVel,desPitch,desRoll,desZVel,desTiltX,desTiltY,desHeading,loopTime
+00:34:03.262 > I2C scan on Wire2...
+00:34:03.264 > Found device at 0x4B
+00:34:03.619 > [fly] IMU started
+00:34:03.619 > [fly] IMU was reset.
+00:34:03.621 > [fly] waiting for IMU data...
