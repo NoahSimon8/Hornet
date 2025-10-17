@@ -372,6 +372,11 @@ void updateState()
     auto e = imu.euler();
     state.pitch = e.pitch - ref.pitch0;
     state.roll = e.roll - ref.roll0;
+    
+    auto a = imu.projectedAngles();
+    state.tiltX = a.tiltAboutX;
+    state.tiltY = a.tiltAboutY;
+    state.heading = a.heading;
 
     // MEKF data for position and rates
 

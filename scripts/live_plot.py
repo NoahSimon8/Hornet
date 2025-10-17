@@ -86,8 +86,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True, help="COM7 or /dev/ttyACM0")
     ap.add_argument("--baud", type=int, default=2000000)
-    ap.add_argument("--cols", nargs="*", default=["throttleA","throttleB","tvcX","tvcY","rvAcc","pitch","roll","tiltX","tiltY","heading","x","y","z","xVel","yVel","zVel","desPitch","desRoll","desZVel","desTiltX","desTiltY","desHeading","time"],
-                    help="names to plot; must match CSV header")
+    ap.add_argument(
+        "--cols",
+        nargs="*",
+        default=["heading", "tiltX", "tiltY"],
+        help="names to plot; must match CSV header",
+    )
     ap.add_argument("--maxpts", type=int, default=2000)
     ap.add_argument("--log", help="write diagnostic output to this file")
     args = ap.parse_args()
@@ -184,19 +188,17 @@ def main():
 
     pg.setConfigOptions(antialias=True)
 
-    # Plots: XY path + Z over time + X over time + Y over time
-    plt_xy = pg.PlotWidget(title="XY path")
-    plt_x = pg.PlotWidget(title=f"{args.cols[0]} vs time")
-    plt_y = pg.PlotWidget(title=f"{args.cols[1]} vs time" if len(args.cols) > 1 else "Y vs time")
-    plt_z = pg.PlotWidget(title=f"{args.cols[2]} vs time" if len(args.cols) > 2 else "Z vs time")
+    signal_names = list(args.cols[:3])
+    while len(signal_names) < 3:
+        signal_names.append("")
 
-    for p in (plt_xy, plt_x, plt_y, plt_z):
-        p.showGrid(x=True, y=True, alpha=0.3)
-
-    layout.addWidget(plt_xy, 0, 0, 2, 1)
-    layout.addWidget(plt_z, 0, 1, 1, 1)
-    layout.addWidget(plt_x, 1, 1, 1, 1)
-    layout.addWidget(plt_y, 2, 0, 1, 2)
+    plot_widgets = []
+    for idx_signal, name in enumerate(signal_names):
+        title = f"{name} vs time" if name else f"Signal {idx_signal + 1}"
+        widget = pg.PlotWidget(title=title)
+        widget.showGrid(x=True, y=True, alpha=0.3)
+        plot_widgets.append(widget)
+        layout.addWidget(widget, idx_signal, 0, 1, 1)
 
     # Data buffers
     maxpts = args.maxpts
@@ -206,10 +208,11 @@ def main():
     z_buf = deque(maxlen=maxpts)
 
     # Curves
-    curve_xy = plt_xy.plot([], [], pen=None, symbol="o", symbolSize=3)
-    curve_x = plt_x.plot([])
-    curve_y = plt_y.plot([])
-    curve_z = plt_z.plot([])
+    curve_x = plot_widgets[0].plot([])
+    curve_y = plot_widgets[1].plot([]) if len(plot_widgets) > 1 else None
+    curve_z = plot_widgets[2].plot([]) if len(plot_widgets) > 2 else None
+
+    signal_keys = tuple(signal_names)
 
     # Update timer
     def update():
@@ -226,12 +229,24 @@ def main():
                 row = [v.strip() for v in s.split(",")]
                 try:
                     t = (float(row[t_idx]) * 1e-6) if t_idx is not None else time.monotonic()
-                    xv = float(row[idx.get(args.cols[0])]) if idx.get(args.cols[0]) is not None else float("nan")
-                    yv = float(row[idx.get(args.cols[1])]) if len(args.cols) > 1 and idx.get(args.cols[1]) is not None else float("nan")
-                    zv = float(row[idx.get(args.cols[2])]) if len(args.cols) > 2 and idx.get(args.cols[2]) is not None else float("nan")
                 except Exception as exc:
                     logger.debug("Skipping row %s: %s", row, exc)
                     continue
+
+                def sample_value(key):
+                    if not key:
+                        return float("nan")
+                    col_idx = idx.get(key)
+                    if col_idx is None or col_idx >= len(row):
+                        return float("nan")
+                    try:
+                        return float(row[col_idx])
+                    except Exception:
+                        return float("nan")
+
+                xv = sample_value(signal_keys[0])
+                yv = sample_value(signal_keys[1]) if len(signal_keys) > 1 else float("nan")
+                zv = sample_value(signal_keys[2]) if len(signal_keys) > 2 else float("nan")
 
                 t_buf.append(t)
                 x_buf.append(xv)
@@ -253,21 +268,18 @@ def main():
                     curve_x.setData(tt, xs)
                 else:
                     curve_x.clear()
-                if has_y:
-                    curve_y.setData(tt, ys)
-                else:
-                    curve_y.clear()
-                if has_z:
-                    curve_z.setData(tt, zs)
-                else:
-                    curve_z.clear()
 
-                xy_pairs = [(x, y) for x, y in zip(xs, ys) if not math.isnan(x) and not math.isnan(y)]
-                if xy_pairs:
-                    xs_finite, ys_finite = zip(*xy_pairs)
-                    curve_xy.setData(xs_finite, ys_finite)
-                else:
-                    curve_xy.clear()
+                if curve_y is not None:
+                    if has_y:
+                        curve_y.setData(tt, ys)
+                    else:
+                        curve_y.clear()
+
+                if curve_z is not None:
+                    if has_z:
+                        curve_z.setData(tt, zs)
+                    else:
+                        curve_z.clear()
         except Exception:
             logger.exception("Unhandled error in update loop")
             _show_error("Teensy Live Plot", "An internal error occurred. See log for details.", QtWidgets=QtWidgets)
