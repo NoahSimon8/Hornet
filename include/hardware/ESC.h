@@ -23,6 +23,13 @@ public:
     _driver.writeMicroseconds(_ch, us);
     _lastUs = us;
   }
+  
+  void setThrottle01(float t01)
+  { // 0..1 -> min..max µs
+    // Apply to ESCs
+    uint16_t throttleUs = static_cast<uint16_t>(util::mapFloat(t01, 0.0f, 1.0f, 1000, 2000));
+    setMicroseconds(throttleUs);
+  }
 
   void setThrottleFloat(float t01)
   { // 0..1 -> min..max µs

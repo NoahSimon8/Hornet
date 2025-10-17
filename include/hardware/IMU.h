@@ -53,7 +53,6 @@ public:
 
     // Enable the reports this application consumes
     _bno.enableReport(SH2_ROTATION_VECTOR, 10000);
-    _bno.enableReport(SH2_LINEAR_ACCELERATION, 10000);
     return true;
   }
 
@@ -87,26 +86,6 @@ public:
         _rvAccuracyRad = val.un.rotationVector.accuracy;
         _rvAccuracy = val.status & 0x03;
         _hasData = true;
-        break;
-
-      case SH2_LINEAR_ACCELERATION:
-        _rawAccel.x = val.un.linearAcceleration.x;
-        _rawAccel.y = val.un.linearAcceleration.y;
-        _rawAccel.z = val.un.linearAcceleration.z;
-
-        {
-          float bx, by, bz;
-          rotateVector(_sensorToBody, _rawAccel.x, _rawAccel.y, _rawAccel.z, bx, by, bz);
-          _accelBody.x = bx;
-          _accelBody.y = by;
-          _accelBody.z = bz;
-
-          float wx, wy, wz;
-          rotateVector(_bodyQuat, _accelBody.x, _accelBody.y, _accelBody.z, wx, wy, wz);
-          _accelWorld.x = wx;
-          _accelWorld.y = wy;
-          _accelWorld.z = wz;
-        }
         break;
 
       default:
