@@ -62,7 +62,7 @@ public:
     writeServo(_servoDegCmd);
   }
 
-  float commandedServoDeg() const { return _servoDegCmd; }
+  float commandedServoDeg() const { return _servoDegCmd - _neutralDeg; }
 
 private:
   float calculateInputAngle(float beta_final_deg) const
