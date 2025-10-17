@@ -2,6 +2,7 @@
 import argparse
 import ctypes
 import logging
+import math
 import os
 import queue
 import sys
@@ -85,7 +86,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True, help="COM7 or /dev/ttyACM0")
     ap.add_argument("--baud", type=int, default=2000000)
-    ap.add_argument("--cols", nargs="*", default=["pos_x", "pos_y", "pos_z"],
+    ap.add_argument("--cols", nargs="*", default=["throttleA","throttleB","tvcX","tvcY","rvAcc","pitch","roll","tiltX","tiltY","heading","x","y","z","xVel","yVel","zVel","desPitch","desRoll","desZVel","desTiltX","desTiltY","desHeading","time"],
                     help="names to plot; must match CSV header")
     ap.add_argument("--maxpts", type=int, default=2000)
     ap.add_argument("--log", help="write diagnostic output to this file")
@@ -172,6 +173,9 @@ def main():
 
     # Figure out indices for requested columns
     idx = {name: (header.index(name) if name in header else None) for name in args.cols}
+    missing_cols = [name for name, pos in idx.items() if pos is None]
+    if missing_cols:
+        logger.warning("Requested columns missing from header: %s", ", ".join(missing_cols))
     t_idx = header.index("t_us") if "t_us" in header else None
 
     win = QtWidgets.QWidget()
@@ -237,10 +241,33 @@ def main():
             if len(t_buf) > 2:
                 t0 = t_buf[0]
                 tt = [ti - t0 for ti in t_buf]
-                curve_x.setData(tt, list(x_buf))
-                curve_y.setData(tt, list(y_buf))
-                curve_z.setData(tt, list(z_buf))
-                curve_xy.setData(list(x_buf), list(y_buf))
+                xs = list(x_buf)
+                ys = list(y_buf)
+                zs = list(z_buf)
+
+                has_x = any(not math.isnan(v) for v in xs)
+                has_y = any(not math.isnan(v) for v in ys)
+                has_z = any(not math.isnan(v) for v in zs)
+
+                if has_x:
+                    curve_x.setData(tt, xs)
+                else:
+                    curve_x.clear()
+                if has_y:
+                    curve_y.setData(tt, ys)
+                else:
+                    curve_y.clear()
+                if has_z:
+                    curve_z.setData(tt, zs)
+                else:
+                    curve_z.clear()
+
+                xy_pairs = [(x, y) for x, y in zip(xs, ys) if not math.isnan(x) and not math.isnan(y)]
+                if xy_pairs:
+                    xs_finite, ys_finite = zip(*xy_pairs)
+                    curve_xy.setData(xs_finite, ys_finite)
+                else:
+                    curve_xy.clear()
         except Exception:
             logger.exception("Unhandled error in update loop")
             _show_error("Teensy Live Plot", "An internal error occurred. See log for details.", QtWidgets=QtWidgets)
