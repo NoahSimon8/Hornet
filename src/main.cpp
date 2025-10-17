@@ -39,7 +39,7 @@ constexpr float SENSOR_TO_BODY_ROLL_DEG = 0.0f;
 PWMDriver pwm(PCA9685_ADDR, Wire);
 ESC esc1(pwm, CH_ESC1, 1000, 2000);
 ESC esc2(pwm, CH_ESC2, 1000, 2000);
-Potentiometer pot(A2);
+Potentiometer potentiometer(A2);
 IMU imu(0x4B, Wire2);
 
 // Linkage numbers — copy your real values here
@@ -147,8 +147,8 @@ void printStatus(float throttle01A, float throttle01B)
 // Utility that doesn’t belong to a single device: basic centering & neutralization
 void centerTVC()
 {
-    tvcX.setDesiredThrustDeg(5.0f);
-    tvcY.setDesiredThrustDeg(-10.0f);
+    tvcX.setDesiredThrustDeg(0.0f);
+    tvcY.setDesiredThrustDeg(0.0f);
 }
 
 void setup()
@@ -157,8 +157,6 @@ void setup()
     while (!Serial && millis() < 5000)
     {
     }
-    // Header for CSV logging
-    Serial.println("# throttleA,throttleB,tvcX,tvcY,rvAcc,pitch,roll,tiltX,tiltY,heading,x,y,z,xVel,yVel,zVel,desPitch,desRoll,desZVel,desTiltX,desTiltY,desHeading,loopTime");
 
     // PWM driver for servos/ESC
     pwm.begin(50.0f);
@@ -218,6 +216,10 @@ void setup()
     esc2.setMicroseconds(1000);
 
     Serial.println(F("[fly] setup complete."));
+
+    // Header for CSV logging
+    Serial.println("# throttleA,throttleB,tvcX,tvcY,rvAcc,pitch,roll,tiltX,tiltY,heading,x,y,z,xVel,yVel,zVel,desPitch,desRoll,desZVel,desTiltX,desTiltY,desHeading,loopTime");
+
 }
 
 // Parse a token that might be "kp=...", "ki=...", "kd=...", or single-char commands.
@@ -391,13 +393,14 @@ void loop()
     // For maintaining a steady loop rate
     double loopstartTimestampUS = micros();
     processSerialCommands();
-    if (stopped)
+    if (stopped || potentiometer.read01() < 0.95f)
     {
         esc1.setMicroseconds(1000);
         esc2.setMicroseconds(1000);
         centerTVC();
         tvcX.update();
         tvcY.update();
+        printStatus(0.0f, 0.0f);
         delay(1000);
         return;
     }
@@ -418,6 +421,10 @@ void loop()
     tvcX.setDesiredThrustDeg(pidOut[0]);
     tvcY.setDesiredThrustDeg(pidOut[1]);
 
+    // Apply servo updates (slew limiting + PWM)
+    tvcX.update();
+    tvcY.update();
+
     // get base throttle
     float throttle01 = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
 
@@ -426,25 +433,20 @@ void loop()
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
-    throttle01a = 0.3;
-    throttle01b = 0.3;
+    throttle01a = 0.05;
+    throttle01b = 0.05;
 
     esc1.setThrottle01(throttle01a);
     esc2.setThrottle01(throttle01b);
 
-    // Apply servo updates (slew limiting + PWM)
-    tvcX.update();
-    tvcY.update();
 
-    // display data 5 times per second, assuming no loop-time overrun
-    if (loopCount % static_cast<int>(loopFreq / 0.2) == 0)
+    // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
+    if (loopCount % static_cast<int>(loopFreq / 100.0) == 0)
     {   
-        // printStatus(throttle01a, throttle01b);
+        printStatus(throttle01a, throttle01b);
+        // Serial.println(potentiometer.read01());
     }
-    if (loopCount % static_cast<int>(loopFreq / 2) == 0)
-    {   
-        Serial.println(esc1.lastUs());
-    }
+
 
     // // Maintain a steady loop rate
     double loopdt = (micros() - loopstartTimestampUS) * 1e-6; // seconds

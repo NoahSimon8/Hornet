@@ -5,29 +5,23 @@
 class Potentiometer
 {
 public:
-  explicit Potentiometer(uint8_t analogPin, uint8_t resolutionBits = 12)
-      : _pin(analogPin), _resBits(resolutionBits) {}
+  explicit Potentiometer(uint8_t analogPin = A2) : _pin(analogPin) {}
+  void begin() { pinMode(_pin, INPUT); }
 
-  void begin()
-  {
-    analogReadResolution(_resBits);
-    analogReadAveraging(8);
-    pinMode(_pin, INPUT);
-  }
-
-  int readRaw() const
-  {
-    return analogRead(_pin);
-  }
-
+  int readRaw() const { return analogRead(_pin); } // 0..1023 (or 4095)
   float read01() const
+  { // 0..1
+    float raw = static_cast<float>(readRaw());
+    float maxADC = 1023.0f; // change to 4095.0f if your MCU is 12-bit
+    return util::clamp(raw / maxADC, 0.0f, 1.0f);
+  }
+
+  uint16_t readMicroseconds(uint16_t minUs, uint16_t maxUs) const
   {
-    const int raw = readRaw();
-    const float maxAdc = float((1UL << _resBits) - 1);
-    return util::clamp(raw / maxAdc, 0.0f, 1.0f);
+    float t = read01();
+    return static_cast<uint16_t>(minUs + t * (maxUs - minUs));
   }
 
 private:
   uint8_t _pin;
-  uint8_t _resBits;
 };
