@@ -147,8 +147,8 @@ void printStatus(float throttle01A, float throttle01B)
 // Utility that doesn’t belong to a single device: basic centering & neutralization
 void centerTVC()
 {
-    tvcX.setDesiredThrustDeg(0.0f);
-    tvcY.setDesiredThrustDeg(0.0f);
+    tvcX.setDesiredThrustDeg(5.0f);
+    tvcY.setDesiredThrustDeg(-10.0f);
 }
 
 void setup()
@@ -426,6 +426,9 @@ void loop()
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
+    throttle01a = 0.3;
+    throttle01b = 0.3;
+
     esc1.setThrottle01(throttle01a);
     esc2.setThrottle01(throttle01b);
 
@@ -434,9 +437,13 @@ void loop()
     tvcY.update();
 
     // display data 5 times per second, assuming no loop-time overrun
-    if (loopCount % static_cast<int>(loopFreq / 5) == 0)
-    {
-        printStatus(throttle01a, throttle01b);
+    if (loopCount % static_cast<int>(loopFreq / 0.2) == 0)
+    {   
+        // printStatus(throttle01a, throttle01b);
+    }
+    if (loopCount % static_cast<int>(loopFreq / 2) == 0)
+    {   
+        Serial.println(esc1.lastUs());
     }
 
     // // Maintain a steady loop rate

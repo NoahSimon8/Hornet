@@ -90,7 +90,13 @@ def main():
         "--cols",
         nargs="*",
         default=["heading", "tiltX", "tiltY", "loopTime"],
-        help="names to plot; must match CSV header",
+        help="left-column plot names; must match CSV header",
+    )
+    ap.add_argument(
+        "--cols-right",
+        nargs="*",
+        default=["throttleA", "throttleB", "tvcX", "tvcY"],
+        help="right-column plot names; must match CSV header",
     )
     ap.add_argument("--maxpts", type=int, default=2000)
     ap.add_argument(
@@ -182,7 +188,12 @@ def main():
         header = []
 
     # Figure out indices for requested columns
-    idx = {name: (header.index(name) if name in header else None) for name in args.cols}
+    requested_cols = []
+    for name in list(args.cols) + list(args.cols_right):
+        if name not in requested_cols:
+            requested_cols.append(name)
+
+    idx = {name: (header.index(name) if name in header else None) for name in requested_cols}
     missing_cols = [name for name, pos in idx.items() if pos is None]
     if missing_cols:
         logger.warning("Requested columns missing from header: %s", ", ".join(missing_cols))
@@ -194,44 +205,45 @@ def main():
 
     pg.setConfigOptions(antialias=True)
 
-    signal_names = list(args.cols[:4])
-    while len(signal_names) < 4:
-        signal_names.append("")
-
     y_ranges = {
         "heading": (-200, 200),
         "tiltX": (-30, 30),
         "tiltY": (-30, 30),
         "loopTime": (0.0, 0.1),
+        "tvcX": (-180, 180),
+        "tvcY": (-180, 180),
     }
 
     scroll_window = args.scroll_window
 
     plot_widgets = []
-    for idx_signal, name in enumerate(signal_names):
-        title = f"{name} vs time" if name else f"Signal {idx_signal + 1}"
-        widget = pg.PlotWidget(title=title)
-        widget.showGrid(x=True, y=True, alpha=0.3)
-        widget.enableAutoRange(x=scroll_window <= 0, y=False)
-        target_range = y_ranges.get(name)
-        if target_range:
-            low, high = target_range
-            widget.setYRange(low, high, padding=0)
-            widget.setLimits(yMin=low, yMax=high)
-        if scroll_window > 0:
-            widget.setXRange(0, scroll_window, padding=0)
-        plot_widgets.append(widget)
-        layout.addWidget(widget, idx_signal, 0, 1, 1)
+    signal_keys = []
+    groups = [list(args.cols), list(args.cols_right)]
+
+    for col_idx, group in enumerate(groups):
+        for row_idx, name in enumerate(group):
+            title = f"{name} vs time" if name else f"Signal {col_idx + 1}-{row_idx + 1}"
+            widget = pg.PlotWidget(title=title)
+            widget.showGrid(x=True, y=True, alpha=0.3)
+            widget.enableAutoRange(x=scroll_window <= 0, y=False)
+            target_range = y_ranges.get(name)
+            if target_range:
+                low, high = target_range
+                widget.setYRange(low, high, padding=0)
+                widget.setLimits(yMin=low, yMax=high)
+            if scroll_window > 0:
+                widget.setXRange(0, scroll_window, padding=0)
+            plot_widgets.append(widget)
+            signal_keys.append(name)
+            layout.addWidget(widget, row_idx, col_idx, 1, 1)
 
     # Data buffers
     maxpts = args.maxpts
     t_buf = deque(maxlen=maxpts)
-    data_buffers = [deque(maxlen=maxpts) for _ in signal_names]
+    data_buffers = [deque(maxlen=maxpts) for _ in signal_keys]
 
     # Curves
     curves = [widget.plot([]) for widget in plot_widgets]
-
-    signal_keys = tuple(signal_names)
 
     # Update timer
     def update():
