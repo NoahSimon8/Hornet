@@ -37,32 +37,51 @@ public:
 
   void begin()
   {
+    _zeroServoDelta = calculateInputAngle(0.0f);
     _servoDegCmd = util::clamp(_neutralDeg, _servoMin, _servoMax);
-    writeServo(_servoDegCmd);
   }
 
   // Set desired *thrust* angle (deg) relative to neutral (betaRelDeg)
-  void setDesiredThrustDeg(float betaRelDeg) { _desiredThrustDeg = betaRelDeg; }
+  void setDesiredThrustDeg(float betaRelDeg)
+  {
+    _manualOverride = false;
+    _desiredThrustDeg = betaRelDeg;
+  }
 
   // Call each loop to apply slew-limit and write PWM
   void update()
   {
+    if (_manualOverride)
+    {
+      writeServo(_servoDegCmd);
+      return;
+    }
+
     // Map desired thrust tilt to *servo delta* via exact four-bar, then add neutral and sign
-    float servoDelta = calculateInputAngle(_lk.betaInitDeg + _desiredThrustDeg); // result is a delta around ~0 at betaRel=0
+    float currentServoDelta = calculateInputAngle(_desiredThrustDeg);
+    float servoDelta = currentServoDelta - _zeroServoDelta;
     float targetServo = _neutralDeg + _sign * servoDelta;
 
-    // slew limit toward target
-    float delta = targetServo - _servoDegCmd;
-    float step = util::clamp(delta, -_slew, _slew);
-    if (step == 0.0f)
-      return; // no change needed
 
-    _servoDegCmd = util::clamp(_servoDegCmd + step, _servoMin, _servoMax);
-
+    _servoDegCmd = targetServo;
     writeServo(_servoDegCmd);
   }
 
+  float commandedThrustDeg() const { return _desiredThrustDeg; }
   float commandedServoDeg() const { return _servoDegCmd - _neutralDeg; }
+
+  void setManualServoDeg(float servoDeg)
+  {
+    _manualOverride = true;
+    _servoDegCmd = util::clamp(servoDeg, _servoMin, _servoMax);
+  }
+
+  void clearManualOverride()
+  {
+    _manualOverride = false;
+  }
+
+  bool manualOverrideActive() const { return _manualOverride; }
 
 private:
   float calculateInputAngle(float beta_final_deg) const
@@ -109,4 +128,6 @@ private:
 
   float _desiredThrustDeg{0.0f}; // relative thrust tilt (deg)
   float _servoDegCmd{90.0f};
+  float _zeroServoDelta{0.0f};
+  bool _manualOverride{false};
 };

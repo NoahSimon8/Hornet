@@ -25,8 +25,8 @@ constexpr uint8_t CH_SERVO_Y = 15;
 const float maxThrottleN = 2.5; // newtons, this is an estimate
 const float maxGimble = 12.0;   // degrees, this is an estimate
 const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
-const float angleXNeutral = 180.0f;
-const float angleYNeutral = 0.0f;
+const float angleXNeutral = 178.0f;
+const float angleYNeutral = 57.0f;
 const double loopFreq = 100.0; // Hz
 constexpr float DEG2RAD_F = 0.0174532925f;
 
@@ -37,8 +37,8 @@ constexpr float SENSOR_TO_BODY_ROLL_DEG = 0.0f;
 
 // ---------- Global hardware objects ----------
 PWMDriver pwm(PCA9685_ADDR, Wire);
-ESC esc1(pwm, CH_ESC1, 1000, 2000);
-ESC esc2(pwm, CH_ESC2, 1000, 2000);
+ESC esc1(pwm, CH_ESC2, 1000, 2000);
+ESC esc2(pwm, CH_ESC1, 1000, 2000);
 Potentiometer potentiometer(A2);
 IMU imu(0x4B, Wire2);
 
@@ -58,8 +58,8 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f, angleYNeutral, -
 // PID pidZ(1, 0, 0);            // needs tuning
 // PID pidZVelocity(1, 0, 0);    // needs tuning
 
-PID pidRoll(0, 0, 0);      // needs tuning
-PID pidPitch(0, 0, 0);     // needs tuning
+PID pidRoll(3, 0, 0);      // needs tuning
+PID pidPitch(1, 0, 0);     // needs tuning
 PID pidHeading(0, 0, 0);   // needs tuning
 PID pidX(0, 0, 0);         // needs tuning
 PID pidY(0, 0, 0);         // needs tuning
@@ -99,7 +99,7 @@ bool stopped = false;
 
 // ---------- data logging ----------
 
-void printWithComma(float value, int precision=3)
+void printWithComma(float value, int precision = 3)
 {
     Serial.print(value, precision);
     Serial.print(",");
@@ -148,6 +148,7 @@ void printStatus(float throttle01A, float throttle01B)
 void centerTVC()
 {
     tvcX.setDesiredThrustDeg(0.0f);
+
     tvcY.setDesiredThrustDeg(0.0f);
 }
 
@@ -161,6 +162,8 @@ void setup()
     // PWM driver for servos/ESC
     pwm.begin(50.0f);
 
+    tvcX.begin();
+    tvcY.begin();
     // Bring servos to neutral
     centerTVC();
 
@@ -219,7 +222,6 @@ void setup()
 
     // Header for CSV logging
     Serial.println("# throttleA,throttleB,tvcX,tvcY,rvAcc,pitch,roll,tiltX,tiltY,heading,x,y,z,xVel,yVel,zVel,desPitch,desRoll,desZVel,desTiltX,desTiltY,desHeading,loopTime");
-
 }
 
 // Parse a token that might be "kp=...", "ki=...", "kd=...", or single-char commands.
@@ -260,6 +262,46 @@ void parseToken(const String &token)
             pidPitch.setD(newKd);
             Serial.print("Updated kd to: ");
             Serial.println(newKd);
+        }
+    }
+    else if (token.startsWith("sx="))
+    {
+        String val = token.substring(3);
+        val.trim();
+        if (val.equalsIgnoreCase("auto"))
+        {
+            tvcX.clearManualOverride();
+            Serial.println(F("TVC X manual override disabled"));
+        }
+        else
+        {
+            float angle = val.toFloat();
+            if (angle != 0.0f || val == "0" || val == "0.0")
+            {
+                tvcX.setManualServoDeg(angle);
+                Serial.print(F("TVC X manual angle set to "));
+                Serial.println(angle);
+            }
+        }
+    }
+    else if (token.startsWith("sy="))
+    {
+        String val = token.substring(3);
+        val.trim();
+        if (val.equalsIgnoreCase("auto"))
+        {
+            tvcY.clearManualOverride();
+            Serial.println(F("TVC Y manual override disabled"));
+        }
+        else
+        {
+            float angle = val.toFloat();
+            if (angle != 0.0f || val == "0" || val == "0.0")
+            {
+                tvcY.setManualServoDeg(angle);
+                Serial.print(F("TVC Y manual angle set to "));
+                Serial.println(angle);
+            }
         }
     }
 }
@@ -374,7 +416,7 @@ void updateState()
     auto e = imu.euler();
     state.pitch = e.pitch - ref.pitch0;
     state.roll = e.roll - ref.roll0;
-    
+
     auto a = imu.projectedAngles();
     state.tiltX = a.tiltAboutX;
     state.tiltY = a.tiltAboutY;
@@ -418,9 +460,11 @@ void loop()
     std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
     // Apply to servos as desired thrust angles
-    // tvcX.setDesiredThrustDeg(pidOut[0]);
-    // tvcY.setDesiredThrustDeg(pidOut[1]);
-    centerTVC();
+    tvcX.setDesiredThrustDeg(pidOut[0]);
+    tvcY.setDesiredThrustDeg(pidOut[1]);
+
+
+    // centerTVC();
 
     // Apply servo updates (slew limiting + PWM)
     tvcX.update();
@@ -440,14 +484,21 @@ void loop()
     esc1.setThrottle01(throttle01a);
     esc2.setThrottle01(throttle01b);
 
-
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
-    if (loopCount % static_cast<int>(loopFreq / 100.0) == 0)
-    {   
+  
+    // if (loopCount % static_cast<int>(loopFreq / 3.0) == 0){
+    //     Serial.print(pidOut[0]); // heartbeat
+    //     Serial.print(", "); // heartbeat
+    //     Serial.println(pidOut[1]); // heartbeat
+
+    // }
+
+
+    if (loopCount % static_cast<int>(loopFreq / 100) == 0)
         printStatus(throttle01a, throttle01b);
+    {
         // Serial.println(potentiometer.read01());
     }
-
 
     // // Maintain a steady loop rate
     double loopdt = (micros() - loopstartTimestampUS) * 1e-6; // seconds
