@@ -46,8 +46,8 @@ IMU imu(0x4B, Wire2);
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
 TVCServo::Linkage linkY{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
 
-TVCServo tvcX(pwm, CH_SERVO_X, linkX, 0, 180, 1000, 2000, 2.0f, angleXNeutral, +1);
-TVCServo tvcY(pwm, CH_SERVO_Y, linkY, 0, 180, 1000, 2000, 2.0f, angleYNeutral, -1);
+TVCServo tvcX(pwm, CH_SERVO_X, linkX, -180, 180, 1000, 2000, 2.0f, angleXNeutral, +1);
+TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -180, 180, 1000, 2000, 2.0f, angleYNeutral, -1);
 
 // ---------- PID controllers ----------
 // PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
@@ -494,7 +494,7 @@ void loop()
     // }
 
 
-    if (loopCount % static_cast<int>(loopFreq / 100) == 0)
+    if (loopCount % static_cast<int>(loopFreq / loopFreq) == 0)
         printStatus(throttle01a, throttle01b);
     {
         // Serial.println(potentiometer.read01());

@@ -38,7 +38,6 @@ public:
   void begin()
   {
     _zeroServoDelta = calculateInputAngle(0.0f);
-    _servoDegCmd = util::clamp(_neutralDeg, _servoMin, _servoMax);
   }
 
   // Set desired *thrust* angle (deg) relative to neutral (betaRelDeg)
@@ -73,7 +72,6 @@ public:
   void setManualServoDeg(float servoDeg)
   {
     _manualOverride = true;
-    _servoDegCmd = util::clamp(servoDeg, _servoMin, _servoMax);
   }
 
   void clearManualOverride()

@@ -95,7 +95,7 @@ def main():
     ap.add_argument(
         "--cols-right",
         nargs="*",
-        default=["throttleA", "throttleB", "tvcX", "tvcY"],
+        default=["throttleA", "rvAcc", "tvcX", "tvcY"],
         help="right-column plot names; must match CSV header",
     )
     ap.add_argument("--maxpts", type=int, default=2000)
@@ -210,6 +210,7 @@ def main():
         "tiltX": (-30, 30),
         "tiltY": (-30, 30),
         "loopTime": (0.0, 0.1),
+        "rvAcc": (-0.5, 3.5),
         "tvcX": (-180, 180),
         "tvcY": (-180, 180),
     }
