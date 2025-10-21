@@ -26,11 +26,13 @@ public:
   TVCServo(PWMDriver &drv, uint8_t channel,
            const Linkage &linkage,
            float servoMinDeg, float servoMaxDeg,
+           float servoRangeMinDeg, float servoRangeMaxDeg,
            uint16_t minUs, uint16_t maxUs,
            float maxSlewDegPerUpdate,
            float servoNeutralDeg, int8_t sign)
       : _drv(drv), _ch(channel), _lk(linkage),
         _servoMin(servoMinDeg), _servoMax(servoMaxDeg),
+        _servoRangeMin(servoRangeMinDeg), _servoRangeMax(servoRangeMaxDeg),
         _minUs(minUs), _maxUs(maxUs),
         _slew(maxSlewDegPerUpdate),
         _neutralDeg(servoNeutralDeg), _sign(sign >= 0 ? 1 : -1) {}
@@ -70,7 +72,7 @@ public:
   float commandedServoRaw() const { return _servoDegCmd; }
   float commandedUs() const
   {
-    return util::angleDegToUs(_servoDegCmd, _servoMin, _servoMax, _minUs, _maxUs);
+    return util::angleDegToUs(_servoDegCmd, _servoRangeMin, _servoRangeMax, _minUs, _maxUs);
   }
 
   void setManualServoUs(float servoUs)
@@ -114,7 +116,8 @@ private:
 
   void writeServo(float servoDeg)
   {
-    const uint16_t us = util::angleDegToUs(servoDeg, _servoMin, _servoMax, _minUs, _maxUs);
+    servoDeg = util::clamp(servoDeg, _servoMin, _servoMax);
+    const uint16_t us = util::angleDegToUs(servoDeg, _servoRangeMin, _servoRangeMax, _minUs, _maxUs);
     if (_manualOverride)
     {
       _drv.writeMicroseconds(_ch, _servoManualUs);
@@ -126,8 +129,8 @@ private:
   PWMDriver &_drv;
   uint8_t _ch;
   Linkage _lk;
-
   float _servoMin, _servoMax;
+  float _servoRangeMin, _servoRangeMax;
   uint16_t _minUs, _maxUs;
   float _slew;
 
