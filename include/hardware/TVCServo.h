@@ -61,17 +61,22 @@ public:
     float servoDelta = currentServoDelta - _zeroServoDelta;
     float targetServo = _neutralDeg + _sign * servoDelta;
 
-
     _servoDegCmd = targetServo;
     writeServo(_servoDegCmd);
   }
 
   float commandedThrustDeg() const { return _desiredThrustDeg; }
   float commandedServoDeg() const { return _servoDegCmd - _neutralDeg; }
+  float commandedServoRaw() const { return _servoDegCmd; }
+  float commandedUs() const
+  {
+    return util::angleDegToUs(_servoDegCmd, _servoMin, _servoMax, _minUs, _maxUs);
+  }
 
-  void setManualServoDeg(float servoDeg)
+  void setManualServoUs(float servoUs)
   {
     _manualOverride = true;
+    _servoManualUs = servoUs;
   }
 
   void clearManualOverride()
@@ -110,6 +115,11 @@ private:
   void writeServo(float servoDeg)
   {
     const uint16_t us = util::angleDegToUs(servoDeg, _servoMin, _servoMax, _minUs, _maxUs);
+    if (_manualOverride)
+    {
+      _drv.writeMicroseconds(_ch, _servoManualUs);
+      return;
+    }
     _drv.writeMicroseconds(_ch, us);
   }
 
@@ -126,6 +136,7 @@ private:
 
   float _desiredThrustDeg{0.0f}; // relative thrust tilt (deg)
   float _servoDegCmd{90.0f};
+  float _servoManualUs{1500.0f};
   float _zeroServoDelta{0.0f};
   bool _manualOverride{false};
 };

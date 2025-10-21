@@ -26,7 +26,7 @@ public:
   // Write a pulse in microseconds (converts to 12-bit ticks)
   void writeMicroseconds(uint8_t ch, uint16_t microseconds)
   {
-    microseconds = constrain(microseconds, (uint16_t)1000, (uint16_t)2000u);
+    microseconds = constrain(microseconds, (uint16_t)500, (uint16_t)2500u);
     const float period_us = 1e6f / _freq; // e.g., 20000 µs at 50 Hz
     const float ticks_per_us = 4096.0f / period_us;
     uint16_t ticks = static_cast<uint16_t>(microseconds * ticks_per_us);
