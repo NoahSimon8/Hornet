@@ -27,15 +27,18 @@ public:
   void setThrottle01(float t01)
   { // 0..1 -> min..max µs
     // Apply to ESCs
-    uint16_t throttleUs = static_cast<uint16_t>(util::mapFloat(t01, 0.0f, 1.0f, 1000, 2000));
-    setMicroseconds(throttleUs);
+    _throttleUs = static_cast<uint16_t>(util::mapFloat(t01, 0.0f, 1.0f, 1000, 2000));
   }
 
   void setThrottleFloat(float t01)
   { // 0..1 -> min..max µs
     t01 = constrain(t01, 0.0f, 1.0f);
-    uint16_t us = static_cast<uint16_t>(_min + t01 * (_max - _min));
-    setMicroseconds(us);
+    _throttleUs = static_cast<uint16_t>(_min + t01 * (_max - _min));
+  }
+
+  void update()
+  {
+    setMicroseconds(_throttleUs);
   }
 
   uint16_t lastUs() const { return _lastUs; }
@@ -44,5 +47,6 @@ private:
   PWMDriver &_driver;
   uint8_t _ch;
   uint16_t _min, _max;
+  uint16_t _throttleUs;
   uint16_t _lastUs{1000};
 };

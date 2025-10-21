@@ -45,9 +45,8 @@ IMU imu(0x4B, Wire2);
 // Linkage numbers — copy your real values here
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
 TVCServo::Linkage linkY{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
-
-TVCServo tvcX(pwm, CH_SERVO_X, linkX, -90, 90, 500, 2500, 2.0f, angleXNeutral, +1);
-TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 90, 500, 2500, 2.0f, angleYNeutral, -1);
+TVCServo tvcX(pwm, CH_SERVO_X, linkX, -70, 90, -90, 90, 500, 2500, 2.0f, angleXNeutral, +1);
+TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 70, -90, 90, 500, 2500, 2.0f, angleYNeutral, -1);
 
 // ---------- PID controllers ----------
 // PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
@@ -58,8 +57,8 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 90, 500, 2500, 2.0f, angleYNeutral, -
 // PID pidZ(1, 0, 0);            // needs tuning
 // PID pidZVelocity(1, 0, 0);    // needs tuning
 
-PID pidRoll(3, 0, 0);      // needs tuning
-PID pidPitch(1, 0, 0);     // needs tuning
+PID pidRoll(2, 0, 0);      // needs tuning
+PID pidPitch(2, 0, 0);     // needs tuning
 PID pidHeading(0, 0, 0);   // needs tuning
 PID pidX(0, 0, 0);         // needs tuning
 PID pidY(0, 0, 0);         // needs tuning
@@ -460,8 +459,8 @@ void loop()
     std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
     // Apply to servos as desired thrust angles
-    // tvcX.setDesiredThrustDeg(pidOut[0]);
-    // tvcY.setDesiredThrustDeg(pidOut[1]);
+    tvcX.setDesiredThrustDeg(pidOut[0]);
+    tvcY.setDesiredThrustDeg(pidOut[1]);
 
     // centerTVC();
 
@@ -477,24 +476,16 @@ void loop()
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
-    throttle01a = 0.0;
-    throttle01b = 0.0;
-
     esc1.setThrottle01(throttle01a);
     esc2.setThrottle01(throttle01b);
+    esc1.update();
+    esc2.update();
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
 
-    if (loopCount % static_cast<int>(loopFreq / 0.5) == 0)
+    if (loopCount % static_cast<int>(loopFreq / loopFreq) == 0)
     {
         printStatus(throttle01a, throttle01b);
-        // Serial.print(tvcX.commandedThrustDeg());
-        // Serial.print(", ");
-        // Serial.print(tvcX.commandedServoDeg());
-        // Serial.print(", ");
-        // Serial.println(tvcX.commandedServoRaw());
-        // Serial.print(", ");
-        // Serial.println(tvcX.commandedUs());
     }
 
     // // Maintain a steady loop rate
