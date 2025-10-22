@@ -57,13 +57,13 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 70, -90, 90, 500, 2500, 2.0f, angleYN
 // PID pidZ(1, 0, 0);            // needs tuning
 // PID pidZVelocity(1, 0, 0);    // needs tuning
 
-PID pidRoll(2, 0, 0);      // needs tuning
-PID pidPitch(2, 0, 0);     // needs tuning
-PID pidHeading(0, 0, 0);   // needs tuning
-PID pidX(0, 0, 0);         // needs tuning
-PID pidY(0, 0, 0);         // needs tuning
-PID pidZ(0, 0, 0);         // needs tuning
-PID pidZVelocity(0, 0, 0); // needs tuning
+PID pidRoll(0.8, 0.1, 0.2);  // needs tuning
+PID pidPitch(0.8, 0.1, 0.2); // needs tuning
+PID pidHeading(0, 0, 0);     // needs tuning
+PID pidX(0, 0, 0);           // needs tuning
+PID pidY(0, 0, 0);           // needs tuning
+PID pidZ(0, 0, 0);           // needs tuning
+PID pidZVelocity(0, 0, 0);   // needs tuning
 // ---------- Simple runtime state ----------
 
 struct Ref
@@ -470,6 +470,8 @@ void loop()
 
     // get base throttle
     float throttle01 = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
+
+    throttle01 = util::clamp(potentiometer.read01() - 0.1f, 0.0f, 1.0f); // for testing only
 
     // calculate yaw correction
     float yawAdjust = headingPID(deltaTime);
