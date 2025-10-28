@@ -1,6 +1,7 @@
 #pragma once
 #include <limits>
 #include <cmath>
+#include "util/Math.h"
 #ifdef abs
 #undef abs // allow std::abs despite Arduino macro
 #endif
@@ -31,13 +32,6 @@ public:
         if (!use_integral_zone_ || std::abs(error) <= integral_zone_)
         {
             integral_ += error * dt;
-            if (use_integral_limits_)
-            {
-                if (integral_ > max_integral_)
-                    integral_ = max_integral_;
-                if (integral_ < min_integral_)
-                    integral_ = min_integral_;
-            }
         }
 
         // Derivative on measurement to reduce derivative kick
@@ -59,7 +53,19 @@ public:
             deriv_term = deriv_state_;
         }
 
-        double output = kp_ * error + ki_ * integral_ + kd_ * deriv_term;
+        double integral_output = integral_ * ki_;
+        if (use_integral_limits_)
+        {
+            integral_output = util::clamp(integral_output, min_integral_, max_integral_);
+        }
+        // prevent division by 0
+        if (ki_ > 0.000001)
+        {
+            integral_ = integral_output / ki_; // store back clamped integral
+        }
+
+        double output = kp_ * error + integral_output + kd_ * deriv_term;
+
         return clampOutput(output);
     }
 
@@ -77,18 +83,16 @@ public:
         kp_ = kp;
         ki_ = ki;
         kd_ = kd;
+        reset();
     }
 
     void setP(double kp) { kp_ = kp; }
     void setI(double ki) { ki_ = ki; }
     void setD(double kd) { kd_ = kd; }
 
-    void getGains(double &kp, double &ki, double &kd) const
-    {
-        kp = kp_;
-        ki = ki_;
-        kd = kd_;
-    }
+    double getP() const { return kp_; }
+    double getI() const { return ki_; }
+    double getD() const { return kd_; }
 
     void setOutputLimits(double min_out, double max_out)
     {
