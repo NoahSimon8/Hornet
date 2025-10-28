@@ -57,8 +57,8 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 70, -90, 90, 500, 2500, 2.0f, angleYN
 // PID pidZ(1, 0, 0);            // needs tuning
 // PID pidZVelocity(1, 0, 0);    // needs tuning
 
-PID pidRoll(0.8, 0.1, 0.2);  // needs tuning
-PID pidPitch(0.8, 0.1, 0.2); // needs tuning
+PID pidRoll(0.8, 0.1, 0.0);  // needs tuning
+PID pidPitch(0.8, 0.1, 0.0); // needs tuning
 PID pidHeading(0, 0, 0);     // needs tuning
 PID pidX(0, 0, 0);           // needs tuning
 PID pidY(0, 0, 0);           // needs tuning
@@ -216,6 +216,9 @@ void setup()
     esc2.arm(1000, 1000);
     esc1.setMicroseconds(1000);
     esc2.setMicroseconds(1000);
+
+    pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
+    pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
 
     Serial.println(F("[fly] setup complete."));
 
@@ -434,7 +437,7 @@ void loop()
     // For maintaining a steady loop rate
     double loopstartTimestampUS = micros();
     processSerialCommands();
-    if (stopped || potentiometer.read01() < 0.95f)
+    if (stopped || potentiometer.read01() < 0.2f)
     {
         esc1.setMicroseconds(1000);
         esc2.setMicroseconds(1000);
@@ -446,8 +449,8 @@ void loop()
         return;
     }
 
-    // // Refresh IMU data
     imu.update();
+    // // Refresh IMU data
     updateState();
 
     // record timestamp for PID use
@@ -471,12 +474,14 @@ void loop()
     // get base throttle
     float throttle01 = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
 
-    throttle01 = util::clamp(potentiometer.read01() - 0.1f, 0.0f, 1.0f); // for testing only
+    throttle01 = util::clamp((potentiometer.read01() - 0.2f) * 1.25f, 0.0f, 1.0f); // for testing only
 
     // calculate yaw correction
     float yawAdjust = headingPID(deltaTime);
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
+
+
 
     esc1.setThrottle01(throttle01a);
     esc2.setThrottle01(throttle01b);
@@ -485,7 +490,7 @@ void loop()
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
 
-    if (loopCount % static_cast<int>(loopFreq / loopFreq) == 0)
+    if (loopCount % static_cast<int>(loopFreq / 1) == 0)
     {
         printStatus(throttle01a, throttle01b);
     }
