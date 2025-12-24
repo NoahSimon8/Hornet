@@ -2,7 +2,6 @@
 #include <array>
 #include <Wire.h>
 #include "hardware/IMU.h"
-#include "hardware/Potentiometer.h"
 #include "hardware/PWMDriver.h"
 #include "hardware/ESC.h"
 #include "hardware/TVCServo.h"
@@ -11,14 +10,25 @@
 #include "util/mekf2.h"
 
 // ---------- Pins / channels ----------
-constexpr uint8_t PIN_POT = A2;
-constexpr uint8_t PCA9685_ADDR = 0x40;
+// Teensy 4.1 direct PWM outputs (no PCA9685)
+// TVC servos:
+constexpr uint8_t PIN_SERVO_X = 12;
+constexpr uint8_t PIN_SERVO_Y = 11;
+// ESCs:
+constexpr uint8_t PIN_ESC1 = 9;
+constexpr uint8_t PIN_ESC2 = 10;
 
-// PCA9685 channels
-constexpr uint8_t CH_ESC1 = 12;
-constexpr uint8_t CH_ESC2 = 13;
-constexpr uint8_t CH_SERVO_X = 14;
-constexpr uint8_t CH_SERVO_Y = 15;
+// Logical channels inside PWMDriver (kept so ESC/TVCServo code stays the same)
+constexpr uint8_t CH_SERVO_X = 0;
+constexpr uint8_t CH_SERVO_Y = 1;
+constexpr uint8_t CH_ESC1   = 2;
+constexpr uint8_t CH_ESC2   = 3;
+
+constexpr uint8_t PIN_POT = A2;
+
+// ---------- Global hardware objects ----------
+
+
 
 // ---------- Constants ----------
 
@@ -36,11 +46,10 @@ constexpr float SENSOR_TO_BODY_PITCH_DEG = -90.0f;
 constexpr float SENSOR_TO_BODY_ROLL_DEG = 0.0f;
 
 // ---------- Global hardware objects ----------
-PWMDriver pwm(PCA9685_ADDR, Wire);
-ESC esc1(pwm, CH_ESC2, 1000, 2000);
-ESC esc2(pwm, CH_ESC1, 1000, 2000);
-Potentiometer potentiometer(A2);
-IMU imu(0x4B, Wire2);
+PWMDriver pwm;
+ESC esc1(pwm, CH_ESC1, 1000, 2000);
+ESC esc2(pwm, CH_ESC2, 1000, 2000);
+IMU imu(0x4B, Wire);
 
 // Linkage numbers — copy your real values here
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
@@ -158,14 +167,39 @@ void setup()
     {
     }
 
+    #ifdef TEENSYDUINO
+  Serial.print("TEENSYDUINO defined, version = ");
+  Serial.println(TEENSYDUINO);
+    #else
+    Serial.println("TENSYDUINO NOT defined");
+    #endif
+
+    #ifdef ARDUINO_TEENSY41
+    Serial.println("ARDUINO_TEENSY41 defined");
+    #else
+    Serial.println("ARDUINO_TEENSY41 NOT defined");
+    #endif
+    
+
     // PWM driver for servos/ESC
     pwm.begin(50.0f);
-
     tvcX.begin();
     tvcY.begin();
+
+    // Attach logical channels to Teensy pins
+    pwm.attach(CH_SERVO_X, PIN_SERVO_X, 1500);
+    pwm.attach(CH_SERVO_Y, PIN_SERVO_Y, 1500);
+    pwm.attach(CH_ESC1,   PIN_ESC1,   1000);
+    pwm.attach(CH_ESC2,   PIN_ESC2,   1000);
+
     // Bring servos to neutral
     centerTVC();
-
+    // Arm ESCs at minimum
+    esc1.arm(1000, 1000);
+    esc2.arm(1000, 1000);
+    esc1.setMicroseconds(1000);
+    esc2.setMicroseconds(1000);
+    
     // IMU
     Wire2.begin();          // Teensy 4.1: SDA2=25, SCL2=24
     Wire2.setClock(400000); // start at 100 kHz
@@ -211,11 +245,6 @@ void setup()
     Serial.println(F("[fly] reference orientation captured."));
     Serial.println(F("[fly] IMU ok."));
 
-    // Arm ESCs at minimum
-    esc1.arm(1000, 1000);
-    esc2.arm(1000, 1000);
-    esc1.setMicroseconds(1000);
-    esc2.setMicroseconds(1000);
 
     pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
     pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
@@ -437,7 +466,7 @@ void loop()
     // For maintaining a steady loop rate
     double loopstartTimestampUS = micros();
     processSerialCommands();
-    if (stopped || potentiometer.read01() < 0.2f)
+    if (stopped)
     {
         esc1.setMicroseconds(1000);
         esc2.setMicroseconds(1000);
@@ -474,13 +503,15 @@ void loop()
     // get base throttle
     float throttle01 = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
 
-    throttle01 = util::clamp((potentiometer.read01() - 0.2f) * 1.25f, 0.0f, 1.0f); // for testing only
+    throttle01 = util::clamp(throttle01, 0.0f, 1.0f); // for testing only
 
     // calculate yaw correction
     float yawAdjust = headingPID(deltaTime);
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
 
+    throttle01a = 0.1;
+    throttle01b = 0.1;
 
 
     esc1.setThrottle01(throttle01a);

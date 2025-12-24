@@ -27,7 +27,8 @@ public:
   void setThrottle01(float t01)
   { // 0..1 -> min..max µs
     // Apply to ESCs
-    _throttleUs = static_cast<uint16_t>(util::mapFloat(t01, 0.0f, 1.0f, 1000, 2000));
+    t01 = constrain(t01, 0.0f, 1.0f);
+    _throttleUs = static_cast<uint16_t>(_min + t01 * (_max - _min));  
   }
 
   void setThrottleFloat(float t01)
