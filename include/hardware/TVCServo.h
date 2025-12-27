@@ -72,6 +72,8 @@ public:
   float commandedServoRaw() const { return _servoDegCmd; }
   float commandedUs() const
   {
+    if (_manualOverride)
+      return _servoManualUs;
     return util::angleDegToUs(_servoDegCmd, _servoRangeMin, _servoRangeMax, _minUs, _maxUs);
   }
 

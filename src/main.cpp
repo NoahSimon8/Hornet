@@ -37,7 +37,7 @@ const float maxGimble = 12.0;   // degrees, this is an estimate
 const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
 const float angleXNeutral = 54.0f;
 const float angleYNeutral = -18.0f;
-const double loopFreq = 100.0; // Hz
+const double loopFreq = 50.0; // Hz
 constexpr float DEG2RAD_F = 0.0174532925f;
 
 // Mounting offset between IMU sensor frame and rocket body frame (deg)
@@ -122,8 +122,8 @@ void printStatus(float throttle01A, float throttle01B)
 
     printWithComma(throttle01A);
     printWithComma(throttle01B);
-    printWithComma(tvcX.commandedThrustDeg());
-    printWithComma(tvcY.commandedThrustDeg());
+    printWithComma(tvcX.commandedUs());
+    printWithComma(tvcY.commandedUs());
     printWithComma(static_cast<int>(imu.rotationAccuracy()));
 
     printWithComma(state.pitch);
@@ -155,9 +155,9 @@ void printStatus(float throttle01A, float throttle01B)
 // Utility that doesn’t belong to a single device: basic centering & neutralization
 void centerTVC()
 {
-    tvcX.setDesiredThrustDeg(0.0f);
+    tvcX.setManualServoUs(1500.0f);
 
-    tvcY.setDesiredThrustDeg(0.0f);
+    tvcY.setManualServoUs(1500.0f);
 }
 
 void setup()
@@ -194,7 +194,7 @@ void setup()
 
     // Bring servos to neutral
     centerTVC();
-    // Arm ESCs at minimum
+    // // Arm ESCs at minimum
     esc1.arm(1000, 1000);
     esc2.arm(1000, 1000);
     esc1.setMicroseconds(1000);
@@ -490,13 +490,15 @@ void loop()
     // get desired thrust angles
     std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
-    // Apply to servos as desired thrust angles
-    tvcX.setDesiredThrustDeg(pidOut[0]);
-    tvcY.setDesiredThrustDeg(pidOut[1]);
+    // // Apply to servos as desired thrust angles
+    // tvcX.setDesiredThrustDeg(pidOut[0]);
+    // tvcY.setDesiredThrustDeg(pidOut[1]);
 
-    // centerTVC();
+    centerTVC();
 
-    // Apply servo updates (slew limiting + PWM)
+ 
+
+    // // Apply servo updates (slew limiting + PWM)
     tvcX.update();
     tvcY.update();
 
@@ -514,14 +516,14 @@ void loop()
     throttle01b = 0.1;
 
 
-    esc1.setThrottle01(throttle01a);
-    esc2.setThrottle01(throttle01b);
+    // esc1.setThrottle01(throttle01a);
+    // esc2.setThrottle01(throttle01b);
     esc1.update();
     esc2.update();
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
 
-    if (loopCount % static_cast<int>(loopFreq / 1) == 0)
+    if (loopCount % static_cast<int>(loopFreq / 20) == 0)
     {
         printStatus(throttle01a, throttle01b);
     }
