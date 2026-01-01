@@ -37,7 +37,7 @@ const float maxGimble = 12.0;   // degrees, this is an estimate
 const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
 const float angleXNeutral = 54.0f;
 const float angleYNeutral = -18.0f;
-const double loopFreq = 50.0; // Hz
+const double loopFreq = 100.0; // Hz
 constexpr float DEG2RAD_F = 0.0174532925f;
 
 // Mounting offset between IMU sensor frame and rocket body frame (deg)
@@ -47,8 +47,8 @@ constexpr float SENSOR_TO_BODY_ROLL_DEG = 0.0f;
 
 // ---------- Global hardware objects ----------
 PWMDriver pwm;
-ESC esc1(pwm, CH_ESC1, 1000, 2000);
-ESC esc2(pwm, CH_ESC2, 1000, 2000);
+ESC esc1(pwm, CH_ESC1, 1140, 2000);
+ESC esc2(pwm, CH_ESC2, 1140, 2000);
 IMU imu(0x4B, Wire);
 
 // Linkage numbers — copy your real values here
@@ -104,6 +104,7 @@ double loopTime = 0.0;
 double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
 bool stopped = false;
+double throttlePower=0.0;
 
 // ---------- data logging ----------
 
@@ -120,8 +121,8 @@ void printStatus(float throttle01A, float throttle01B)
     //     Serial.println(F("[fly] IMU has no data."));
     // }
 
+    printWithComma(esc1.lastUs());
     printWithComma(throttle01A);
-    printWithComma(throttle01B);
     printWithComma(tvcX.commandedUs());
     printWithComma(tvcY.commandedUs());
     printWithComma(static_cast<int>(imu.rotationAccuracy()));
@@ -181,7 +182,7 @@ void setup()
     #endif
     
 
-    // PWM driver for servos/ESC
+    // PWM driver for servos/ESCx
     pwm.begin(50.0f);
     tvcX.begin();
     tvcY.begin();
@@ -269,6 +270,17 @@ void parseToken(const String &token)
             pidPitch.setP(newKp);
             Serial.print("Updated kp to: ");
             Serial.println(newKp);
+        }
+    }
+    else if (token.startsWith("t="))
+    {
+        String val = token.substring(3);
+        float thPow = val.toFloat();
+        if (thPow != 0.0 || val == "0" || val == "0.0")
+        {
+            throttlePower = thPow;
+            Serial.print("Updated throttle power to: ");
+            Serial.println(thPow);
         }
     }
     else if (token.startsWith("ki="))
@@ -494,8 +506,25 @@ void loop()
     // tvcX.setDesiredThrustDeg(pidOut[0]);
     // tvcY.setDesiredThrustDeg(pidOut[1]);
 
-    centerTVC();
+    // centerTVC();
 
+    centerTVC();
+    // int speed = 4;
+    // int min = 500;
+    // int max = 2500;
+    // if (loopCount%(2 * (max-min) / speed) < ((max-min) / speed))
+    // {   
+    //     // if (loopCount%12 == 0){
+    //         tvcX.setManualServoUs(min+loopCount%((max-min)/speed) * speed);
+    //         tvcY.setManualServoUs(min+loopCount%((max-min)/speed) * speed);
+    //     // }
+    // } else {
+    //     // if (loopCount%12 == 0){
+    //         tvcX.setManualServoUs(max - (loopCount%((max-min)/speed) * speed));
+    //         tvcY.setManualServoUs(max - (loopCount%((max-min)/speed) * speed));
+    //     // }
+    // }
+ 
  
 
     // // Apply servo updates (slew limiting + PWM)
@@ -511,19 +540,17 @@ void loop()
     float yawAdjust = headingPID(deltaTime);
     float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
+    throttle01a = 0.0;
+    throttle01b = 0.0;
 
-    throttle01a = 0.1;
-    throttle01b = 0.1;
-
-
-    // esc1.setThrottle01(throttle01a);
-    // esc2.setThrottle01(throttle01b);
+    esc1.setThrottle01(throttlePower);
+    esc2.setThrottle01(throttlePower);
     esc1.update();
     esc2.update();
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
 
-    if (loopCount % static_cast<int>(loopFreq / 20) == 0)
+    if (loopCount % static_cast<int>(loopFreq / 1) == 0)
     {
         printStatus(throttle01a, throttle01b);
     }
