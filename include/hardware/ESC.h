@@ -5,7 +5,7 @@
 class ESC
 {
   public:
-    ESC(PWMDriver &driver, uint8_t channel, uint16_t minUs = 1140, uint16_t maxUs = 2000)
+    ESC(PWMDriver &driver, uint8_t channel, uint16_t minUs = 1100, uint16_t maxUs = 2000)
         : _driver(driver), _ch(channel), _min(minUs), _max(maxUs) {}
 
     void arm(uint16_t armUs = 1000, uint32_t msHold = 5000)

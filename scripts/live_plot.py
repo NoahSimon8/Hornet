@@ -40,14 +40,15 @@ def _setup_logger(log_path):
 def _show_error(title, message, QtWidgets=None):
     if QtWidgets is not None:
         try:
-            app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+            _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
             QtWidgets.QMessageBox.critical(None, title, message)
             return
         except Exception:
             pass
     try:
         from PyQt5 import QtWidgets as _QtWidgets  # type: ignore
-        app = _QtWidgets.QApplication.instance() or _QtWidgets.QApplication(sys.argv)
+
+        _ = _QtWidgets.QApplication.instance() or _QtWidgets.QApplication(sys.argv)
         _QtWidgets.QMessageBox.critical(None, title, message)
         return
     except Exception:
@@ -68,6 +69,7 @@ def _install_exception_hook(logger, QtWidgets):
             return
         logger.error("Unhandled exception", exc_info=(exc_type, exc_value, exc_tb))
         _show_error("Teensy Live Plot", f"Unhandled error:\n{exc_value}", QtWidgets=QtWidgets)
+
     sys.excepthook = _handler
 
 
@@ -79,7 +81,10 @@ def reader(ser, out_q, stop_evt):
                 continue
             out_q.put(line.decode("utf-8", "replace").strip())
     finally:
-        ser.close()
+        try:
+            ser.close()
+        except Exception:
+            pass
 
 
 def main():
@@ -106,6 +111,12 @@ def main():
         help="seconds shown on the x-axis; <=0 keeps expanding",
     )
     ap.add_argument("--log", help="write diagnostic output to this file")
+    ap.add_argument(
+        "--hb-ms",
+        type=int,
+        default=200,
+        help="Heartbeat period in ms (<=0 disables). Sends 'hb' lines to keep the device in RUN mode.",
+    )
     args = ap.parse_args()
 
     logger = _setup_logger(args.log)
@@ -140,7 +151,9 @@ def main():
 
     try:
         import serial  # type: ignore
-        ser = serial.Serial(args.port, args.baud, timeout=0.1)
+
+        # add a small write timeout so a stuck device doesn't freeze the UI
+        ser = serial.Serial(args.port, args.baud, timeout=0.1, write_timeout=0.25)
     except ModuleNotFoundError as exc:
         logger.error("pyserial not available: %s", exc)
         _show_error("Teensy Live Plot", f"pyserial is required but not installed:\n{exc}", QtWidgets=QtWidgets)
@@ -149,21 +162,16 @@ def main():
         logger.error("Could not open serial port %s: %s", args.port, exc)
         try:
             from serial.tools import list_ports  # type: ignore
+
             ports = [port.device for port in list_ports.comports()]
         except Exception:
             ports = []
-        if ports:
-            hint = "Available ports: " + ", ".join(ports)
-            logger.error(hint)
-        else:
-            hint = "No serial ports detected."
-            logger.error(hint)
-        _show_error(
-            "Teensy Live Plot",
-            f"Could not open serial port {args.port}:\n{exc}\n\n{hint}",
-            QtWidgets=QtWidgets,
-        )
+        hint = ("Available ports: " + ", ".join(ports)) if ports else "No serial ports detected."
+        logger.error(hint)
+        _show_error("Teensy Live Plot", f"Could not open serial port {args.port}:\n{exc}\n\n{hint}", QtWidgets=QtWidgets)
         return 1
+
+    ser_lock = threading.Lock()
 
     # Start background reader
     q = queue.Queue()
@@ -211,8 +219,8 @@ def main():
         "tiltY": (-30, 30),
         "loopTime": (0.0, 0.1),
         "rvAcc": (-0.5, 3.5),
-        "tvcX": (0, 3000),
-        "tvcY": (0, 3000),
+        "tvcX": (0, 50),
+        "tvcY": (0, 50),
     }
 
     scroll_window = args.scroll_window
@@ -238,12 +246,87 @@ def main():
             signal_keys.append(name)
             layout.addWidget(widget, row_idx, col_idx, 1, 1)
 
-    # Data buffers
+    # ---- Command UI (Option 1) ----
+    bottom_row = max(len(args.cols), len(args.cols_right))
+
+    console = QtWidgets.QPlainTextEdit()
+    console.setReadOnly(True)
+    console.setPlaceholderText("Console output (non-CSV lines, command sends, replies)...")
+    try:
+        console.document().setMaximumBlockCount(300)
+    except Exception:
+        pass
+
+    def _console_append(line: str):
+        # avoid super-long lines blowing up UI
+        if not line:
+            return
+        if len(line) > 5000:
+            line = line[:5000] + " …"
+        console.appendPlainText(line)
+
+    cmd_bar = QtWidgets.QWidget()
+    cmd_layout = QtWidgets.QHBoxLayout(cmd_bar)
+    cmd_layout.setContentsMargins(6, 6, 6, 6)
+
+    cmd_label = QtWidgets.QLabel("Cmd:")
+    cmd_edit = QtWidgets.QLineEdit()
+    cmd_edit.setPlaceholderText("Commands: kp=1.0 ki=0.1 kd=0.0 | t=0.2 | sx=auto | sx=120 sy=135 | (blank toggles)")
+    append_nl = QtWidgets.QCheckBox("Append \\n")
+    append_nl.setChecked(True)
+
+    send_btn = QtWidgets.QPushButton("Send")
+    send_btn.setToolTip("Send command to the device over the same serial port used for plotting")
+    cmd_layout.addWidget(cmd_label)
+    cmd_layout.addWidget(cmd_edit, 1)
+    cmd_layout.addWidget(append_nl)
+    cmd_layout.addWidget(send_btn)
+
+    layout.addWidget(cmd_bar, bottom_row, 0, 1, 2)
+    layout.addWidget(console, bottom_row + 1, 0, 1, 2)
+
+    def send_command():
+        if stop_evt.is_set():
+            return
+        text = cmd_edit.text()
+        text_stripped = (text or "").strip()
+
+        # Allow blank line to be sent (your firmware uses it as a toggle)
+        if text_stripped == "":
+            out = "\n"
+        else:
+            out = text_stripped
+            if append_nl.isChecked() and not out.endswith("\n"):
+                out += "\n"
+        try:
+            payload = out.encode("utf-8")
+        except Exception:
+            payload = (out + "\n").encode("utf-8", "replace")
+
+        try:
+            with ser_lock:
+                ser.write(payload)
+                # flush to push out immediately (especially on Windows CDC)
+                try:
+                    ser.flush()
+                except Exception:
+                    pass
+            _console_append(f"> {text}")
+            logger.info("Sent command: %s", text)
+        except Exception as exc:
+            _console_append(f"! send failed: {exc}")
+            logger.warning("Send failed: %s", exc)
+
+        cmd_edit.clear()
+
+    send_btn.clicked.connect(send_command)
+    cmd_edit.returnPressed.connect(send_command)
+
+    # ---- Data buffers ----
     maxpts = args.maxpts
     t_buf = deque(maxlen=maxpts)
     data_buffers = [deque(maxlen=maxpts) for _ in signal_keys]
 
-    # Curves
     curves = [widget.plot([]) for widget in plot_widgets]
 
     # Update timer
@@ -256,13 +339,33 @@ def main():
                 except queue.Empty:
                     break
                 drained += 1
-                if s.startswith("#") or not s:
+
+                if not s:
                     continue
+
+                # Header lines are not data; show them once if you want
+                if s.startswith("#"):
+                    # uncomment if you want to see headers in the console:
+                    # _console_append(s)
+                    continue
+
+                # reat non-CSV as console output (command replies, logs, etc.)
+                if "," not in s:
+                    _console_append(s)
+                    continue
+
                 row = [v.strip() for v in s.split(",")]
+
+                #  if we have a header, but this row is too short, it's probably not plot data
+                if header and len(row) < len(header):
+                    _console_append(s)
+                    continue
+
+                # If we can't get a valid timestamp, treat the whole line as "console"
                 try:
                     t = (float(row[t_idx]) * 1e-6) if t_idx is not None else time.monotonic()
-                except Exception as exc:
-                    logger.debug("Skipping row %s: %s", row, exc)
+                except Exception:
+                    _console_append(s)
                     continue
 
                 def sample_value(key):
@@ -295,6 +398,7 @@ def main():
                     xmax = xmin + scroll_window
                     for widget in plot_widgets:
                         widget.setXRange(xmin, xmax, padding=0)
+
         except Exception:
             logger.exception("Unhandled error in update loop")
             _show_error("Teensy Live Plot", "An internal error occurred. See log for details.", QtWidgets=QtWidgets)
@@ -304,8 +408,31 @@ def main():
     timer.timeout.connect(update)
     timer.start(16)  # ~60 FPS
 
-    win.resize(1100, 800)
-    win.show()
+
+    # ---- Heartbeat (keeps Teensy alive / triggers device-side failsafe if it stops) ----
+    # The firmware should STOP if it hasn't received a heartbeat for some timeout.
+    def _send_heartbeat():
+        if stop_evt.is_set():
+            return
+        if getattr(args, "hb_ms", 0) <= 0:
+            return
+        try:
+            with ser_lock:
+                ser.write(b"hb\n")
+                # no flush needed; keep it lightweight
+        except Exception:
+            # If the port disappears (USB unplug), don't spam errors forever.
+            logger.warning("Heartbeat write failed; stopping heartbeat timer", exc_info=True)
+            try:
+                hb_timer.stop()
+            except Exception:
+                pass
+
+    hb_timer = QtCore.QTimer()
+    hb_timer.timeout.connect(_send_heartbeat)
+    hb_timer.start(int(args.hb_ms))
+
+    win.showMaximized()
     try:
         rc = app.exec_()
         logger.info("Event loop exited with code %s", rc)
@@ -313,7 +440,10 @@ def main():
     finally:
         stop_evt.set()
         logger.info("Stopping reader thread")
-        thr.join(timeout=1)
+        try:
+            thr.join(timeout=1)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

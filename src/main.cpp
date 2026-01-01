@@ -42,13 +42,13 @@ constexpr float DEG2RAD_F = 0.0174532925f;
 
 // Mounting offset between IMU sensor frame and rocket body frame (deg)
 constexpr float SENSOR_TO_BODY_YAW_DEG = 45.0f;
-constexpr float SENSOR_TO_BODY_PITCH_DEG = -90.0f;
-constexpr float SENSOR_TO_BODY_ROLL_DEG = 0.0f;
+constexpr float SENSOR_TO_BODY_PITCH_DEG = 90.0f;
+constexpr float SENSOR_TO_BODY_ROLL_DEG = 180.0f;
 
 // ---------- Global hardware objects ----------
 PWMDriver pwm;
-ESC esc1(pwm, CH_ESC1, 1140, 2000);
-ESC esc2(pwm, CH_ESC2, 1140, 2000);
+ESC esc1(pwm, CH_ESC1, 1100, 2000);
+ESC esc2(pwm, CH_ESC2, 1100, 2000);
 IMU imu(0x4B, Wire);
 
 // Linkage numbers — copy your real values here
@@ -104,6 +104,38 @@ double loopTime = 0.0;
 double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
 bool stopped = false;
+
+// ---------- Host heartbeat failsafe ----------
+// The PC-side live plotter sends "hb" lines periodically.
+// If we stop receiving them for > HEARTBEAT_TIMEOUT_MS (after we've seen at least one),
+// we force stopped=true to put outputs into a safe state.
+constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 800;  // must be > heartbeat period on PC
+static uint32_t lastHeartbeatMs = 0;
+static bool heartbeatSeen = false;
+static bool heartbeatLostLatched = false;
+
+static inline void noteHeartbeat()
+{
+    lastHeartbeatMs = millis();
+    heartbeatSeen = true;
+}
+
+static inline void checkHeartbeatFailsafe()
+{
+    if (!heartbeatSeen) return;                 // don't enforce until we've seen the host at least once
+    if (stopped) return;                        // already stopped
+    const uint32_t now = millis();
+    if ((uint32_t)(now - lastHeartbeatMs) > HEARTBEAT_TIMEOUT_MS)
+    {
+        stopped = true;
+        if (!heartbeatLostLatched)
+        {
+            heartbeatLostLatched = true;
+            // NOTE: This line will show up in the plotter "console" pane (non-CSV)
+            Serial.println(F("[fly] Heartbeat lost -> STOPPED"));
+        }
+    }
+}
 double throttlePower=0.0;
 
 // ---------- data logging ----------
@@ -123,8 +155,8 @@ void printStatus(float throttle01A, float throttle01B)
 
     printWithComma(esc1.lastUs());
     printWithComma(throttle01A);
-    printWithComma(tvcX.commandedUs());
-    printWithComma(tvcY.commandedUs());
+    printWithComma(tvcX.commandedServoDeg());
+    printWithComma(tvcY.commandedServoDeg());
     printWithComma(static_cast<int>(imu.rotationAccuracy()));
 
     printWithComma(state.pitch);
@@ -356,13 +388,18 @@ void processSerialCommands()
     {
         String input = Serial.readStringUntil('\n');
         input.trim();
+        // Any line from the host counts as a heartbeat (including "hb")
+        noteHeartbeat();
         if (input.length() == 0)
         {
             stopped = !stopped;
             if (stopped)
                 Serial.println(F("[fly] Stopped"));
-            else
+            else {
+                // allow future heartbeat-loss message after a manual restart
+                heartbeatLostLatched = false;
                 Serial.println(F("[fly] Restarted"));
+            }
             return;
         }
 
@@ -478,6 +515,7 @@ void loop()
     // For maintaining a steady loop rate
     double loopstartTimestampUS = micros();
     processSerialCommands();
+    checkHeartbeatFailsafe();
     if (stopped)
     {
         esc1.setMicroseconds(1000);
@@ -505,8 +543,6 @@ void loop()
     // // Apply to servos as desired thrust angles
     // tvcX.setDesiredThrustDeg(pidOut[0]);
     // tvcY.setDesiredThrustDeg(pidOut[1]);
-
-    // centerTVC();
 
     centerTVC();
     // int speed = 4;
@@ -550,7 +586,7 @@ void loop()
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
 
-    if (loopCount % static_cast<int>(loopFreq / 1) == 0)
+    if (loopCount % static_cast<int>(loopFreq / 50) == 0)
     {
         printStatus(throttle01a, throttle01b);
     }

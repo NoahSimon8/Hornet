@@ -93,6 +93,7 @@ public:
 private:
   float calculateInputAngle(float beta_final_deg) const
   {
+
     const float beta_init_rad = radians(_lk.betaInitDeg);
     const float beta_final_rad = radians(beta_final_deg);
 
