@@ -277,6 +277,7 @@ def main():
 
     send_btn = QtWidgets.QPushButton("Send")
     send_btn.setToolTip("Send command to the device over the same serial port used for plotting")
+
     cmd_layout.addWidget(cmd_label)
     cmd_layout.addWidget(cmd_edit, 1)
     cmd_layout.addWidget(append_nl)
@@ -333,7 +334,10 @@ def main():
     def update():
         try:
             drained = 0
-            while drained < 2000:
+            t_start = time.perf_counter()
+            # Keep each UI update short so the event loop stays responsive
+            # (and background threads like the heartbeat aren't delayed).
+            while drained < 500 and (time.perf_counter() - t_start) < 0.006:
                 try:
                     s = q.get_nowait()
                 except queue.Empty:
@@ -408,31 +412,38 @@ def main():
     timer.timeout.connect(update)
     timer.start(16)  # ~60 FPS
 
+    # ---- Heartbeat (threaded) ----
+    # IMPORTANT: A Qt QTimer heartbeat can get starved when the UI thread is busy
+    # draining/parsing lots of serial data (e.g., if you print much faster).
+    # This thread keeps heartbeats going even under heavy plotting load.
+    hb_thread = None
+    if getattr(args, "hb_ms", 0) and args.hb_ms > 0:
+        hb_period_s = max(0.02, float(args.hb_ms) / 1000.0)
 
-    # ---- Heartbeat (keeps Teensy alive / triggers device-side failsafe if it stops) ----
-    # The firmware should STOP if it hasn't received a heartbeat for some timeout.
-    def _send_heartbeat():
-        if stop_evt.is_set():
-            return
-        if getattr(args, "hb_ms", 0) <= 0:
-            return
-        try:
-            with ser_lock:
-                ser.write(b"hb\n")
-                # no flush needed; keep it lightweight
-        except Exception:
-            # If the port disappears (USB unplug), don't spam errors forever.
-            logger.warning("Heartbeat write failed; stopping heartbeat timer", exc_info=True)
-            try:
-                hb_timer.stop()
-            except Exception:
-                pass
+        def _hb_worker():
+            next_t = time.monotonic()
+            while not stop_evt.is_set():
+                next_t += hb_period_s
+                dt = next_t - time.monotonic()
+                if dt > 0:
+                    time.sleep(dt)
+                else:
+                    # if we fall behind, don't spin; reset schedule
+                    next_t = time.monotonic()
+                try:
+                    with ser_lock:
+                        ser.write(b"hb\n")
+                except Exception:
+                    # Port likely went away (USB unplug). Exit quietly.
+                    logger.warning("Heartbeat write failed; stopping heartbeat thread", exc_info=True)
+                    break
 
-    hb_timer = QtCore.QTimer()
-    hb_timer.timeout.connect(_send_heartbeat)
-    hb_timer.start(int(args.hb_ms))
+        hb_thread = threading.Thread(target=_hb_worker, daemon=True)
+        hb_thread.start()
 
-    win.showMaximized()
+
+    win.resize(1100, 900)
+    win.show()
     try:
         rc = app.exec_()
         logger.info("Event loop exited with code %s", rc)
@@ -444,6 +455,11 @@ def main():
             thr.join(timeout=1)
         except Exception:
             pass
+        if hb_thread is not None:
+            try:
+                hb_thread.join(timeout=1)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
