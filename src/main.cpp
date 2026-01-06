@@ -155,7 +155,7 @@ void printStatus(float throttle01A, float throttle01B)
 
     printWithComma(esc1.lastUs());
     printWithComma(throttle01A);
-    printWithComma(tvcX.commandedUs());
+    printWithComma(tvcX.commandedThrustDeg());
     printWithComma(tvcY.commandedThrustDeg());
     printWithComma(static_cast<int>(imu.rotationAccuracy()));
 

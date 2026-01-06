@@ -68,7 +68,7 @@ public:
 
     _servoDegCmd = targetServo;
 \
-    writeServo(_servoDegCmd);
+    writeServo(0);
   }
 
   float commandedThrustDeg() const { return _desiredThrustDeg; }
