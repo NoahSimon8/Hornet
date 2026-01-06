@@ -35,8 +35,8 @@ constexpr uint8_t PIN_POT = A2;
 const float maxThrottleN = 2.5; // newtons, this is an estimate
 const float maxGimble = 12.0;   // degrees, this is an estimate
 const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
-const float angleXNeutral = 54.0f;
-const float angleYNeutral = -18.0f;
+const float angleXNeutral = 0.0f;
+const float angleYNeutral = 0.0f;
 const double loopFreq = 100.0; // Hz
 constexpr float DEG2RAD_F = 0.0174532925f;
 
@@ -54,8 +54,8 @@ IMU imu(0x4B, Wire);
 // Linkage numbers — copy your real values here
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
 TVCServo::Linkage linkY{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
-TVCServo tvcX(pwm, CH_SERVO_X, linkX, -70, 90, -90, 90, 500, 2500, 2.0f, angleXNeutral, +1);
-TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 70, -90, 90, 500, 2500, 2.0f, angleYNeutral, -1);
+TVCServo tvcX(pwm, CH_SERVO_X, linkX, -90, 90, -90, 90, 500, 2500, 2.0f, angleXNeutral, +1);
+TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 90, -90, 90, 500, 2500, 2.0f, angleYNeutral, -1);
 
 // ---------- PID controllers ----------
 // PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
@@ -155,8 +155,8 @@ void printStatus(float throttle01A, float throttle01B)
 
     printWithComma(esc1.lastUs());
     printWithComma(throttle01A);
-    printWithComma(tvcX.commandedServoDeg());
-    printWithComma(tvcY.commandedServoDeg());
+    printWithComma(tvcX.commandedUs());
+    printWithComma(tvcY.commandedThrustDeg());
     printWithComma(static_cast<int>(imu.rotationAccuracy()));
 
     printWithComma(state.pitch);
@@ -188,9 +188,9 @@ void printStatus(float throttle01A, float throttle01B)
 // Utility that doesn’t belong to a single device: basic centering & neutralization
 void centerTVC()
 {
-    tvcX.setManualServoUs(1500.0f);
+    tvcX.setDesiredThrustDeg(0);
 
-    tvcY.setManualServoUs(1500.0f);
+    tvcY.setDesiredThrustDeg(0);
 }
 
 void setup()
@@ -541,10 +541,10 @@ void loop()
     std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
 
     // // Apply to servos as desired thrust angles
-    // tvcX.setDesiredThrustDeg(pidOut[0]);
-    // tvcY.setDesiredThrustDeg(pidOut[1]);
+    tvcX.setDesiredThrustDeg(pidOut[0]);
+    tvcY.setDesiredThrustDeg(pidOut[1]);
 
-    centerTVC();
+    // centerTVC();
     // int speed = 4;
     // int min = 500;
     // int max = 2500;

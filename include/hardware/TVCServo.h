@@ -54,16 +54,20 @@ public:
   {
     if (_manualOverride)
     {
+
       writeServo(_servoDegCmd);
       return;
     }
 
-    // Map desired thrust tilt to *servo delta* via exact four-bar, then add neutral and sign
+ /*** Old code for nuetral offset - Not needed on hornet as servo 0 is gimble 0
     float currentServoDelta = calculateInputAngle(_desiredThrustDeg);
     float servoDelta = currentServoDelta - _zeroServoDelta;
     float targetServo = _neutralDeg + _sign * servoDelta;
+ */
+    float targetServo = calculateInputAngle(_desiredThrustDeg);
 
     _servoDegCmd = targetServo;
+\
     writeServo(_servoDegCmd);
   }
 
@@ -73,8 +77,8 @@ public:
   float commandedUs() const
   {
     if (_manualOverride)
-      return _servoManualUs;
-    return util::angleDegToUs(_servoDegCmd, _servoRangeMin, _servoRangeMax, _minUs, _maxUs);
+      return _servoUsCmd;
+    return _servoUsCmd;
   }
 
   void setManualServoUs(float servoUs)
@@ -93,28 +97,13 @@ public:
 private:
   float calculateInputAngle(float beta_final_deg) const
   {
+    // placeholder for linkage inverse kinematics, linear scale from -12 to 12
 
-    const float beta_init_rad = radians(_lk.betaInitDeg);
-    const float beta_final_rad = radians(beta_final_deg);
-
-    const float L1 = _lk.L1, L2 = _lk.L2, L3 = _lk.L3, L4 = _lk.L4;
-
-    const float L = sqrtf(L1 * L1 + L2 * L2 - 2.0f * L1 * L2 * cosf(beta_init_rad + beta_final_rad));
-
-    auto safe_acos_deg = [](float x) -> float
-    {
-      if (x > 1.0f)
-        x = 1.0f;
-      if (x < -1.0f)
-        x = -1.0f;
-      return degrees(acosf(x));
-    };
-
-    const float p = safe_acos_deg(-(L3 * L3 - L4 * L4 - L * L) / (2.0f * L * L4));
-    const float q = safe_acos_deg(-(L1 * L1 - L2 * L2 - L * L) / (2.0f * L * L2));
-
-    // Returns a servo *delta* (deg) near 0 when betaRel = 0, matching your original behavior.
-    return 180.0f - p - q - _lk.betaInitDeg;
+    return util::mapFloat(beta_final_deg,
+                            -12,
+                            12,
+                            -90,
+                            90);
   }
 
   void writeServo(float servoDeg)
@@ -124,8 +113,11 @@ private:
     if (_manualOverride)
     {
       _drv.writeMicroseconds(_ch, _servoManualUs);
+      _servoUsCmd = _servoManualUs;
       return;
     }
+    _servoUsCmd = us;
+
     _drv.writeMicroseconds(_ch, us);
   }
 
@@ -142,6 +134,7 @@ private:
 
   float _desiredThrustDeg{0.0f}; // relative thrust tilt (deg)
   float _servoDegCmd{90.0f};
+  float _servoUsCmd{1500.0f};
   float _servoManualUs{1500.0f};
   float _zeroServoDelta{0.0f};
   bool _manualOverride{false};

@@ -219,10 +219,10 @@ def main():
         "tiltY": (-30, 30),
         "loopTime": (0.0, 0.1),
         "rvAcc": (-0.5, 3.5),
-        "tvcX": (0, 50),
-        "tvcY": (0, 50),
+        "tvcX": (0, 3000),
+        "tvcY": (-90,90),
     }
-
+    
     scroll_window = args.scroll_window
 
     plot_widgets = []
