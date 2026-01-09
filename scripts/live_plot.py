@@ -79,7 +79,16 @@ def reader(ser, out_q, stop_evt):
             line = ser.readline()
             if not line:
                 continue
-            out_q.put(line.decode("utf-8", "replace").strip())
+            s = line.decode("utf-8", "replace").strip()
+            try:
+                out_q.put_nowait(s)
+            except queue.Full:
+                # drop oldest to keep “most recent” data
+                try:
+                    out_q.get_nowait()
+                    out_q.put_nowait(s)
+                except Exception:
+                    pass
     finally:
         try:
             ser.close()
@@ -174,7 +183,7 @@ def main():
     ser_lock = threading.Lock()
 
     # Start background reader
-    q = queue.Queue()
+    q = queue.Queue(maxsize=5000)
     stop_evt = threading.Event()
     thr = threading.Thread(target=reader, args=(ser, q, stop_evt), daemon=True)
     thr.start()
@@ -211,7 +220,7 @@ def main():
     win.setWindowTitle("Teensy Live Plot")
     layout = QtWidgets.QGridLayout(win)
 
-    pg.setConfigOptions(antialias=True)
+    pg.setConfigOptions(antialias=False)
 
     y_ranges = {
         "heading": (-200, 200),
@@ -220,7 +229,7 @@ def main():
         "loopTime": (0.0, 0.1),
         "rvAcc": (-0.5, 3.5),
         "tvcX": (-15, 15),
-        "tvcY": (-15, 15),
+        "tvcY": (-100, 100),
     }
 
     scroll_window = args.scroll_window
@@ -410,7 +419,7 @@ def main():
 
     timer = QtCore.QTimer()
     timer.timeout.connect(update)
-    timer.start(16)  # ~60 FPS
+    timer.start(33)  # ~60 FPS
 
     # ---- Heartbeat (threaded) ----
     # IMPORTANT: A Qt QTimer heartbeat can get starved when the UI thread is busy

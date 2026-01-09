@@ -25,12 +25,14 @@ public:
   // sign = +1 for "neutral + delta", -1 for "neutral - delta" (matches your original axis directions)
   TVCServo(PWMDriver &drv, uint8_t channel,
            const Linkage &linkage,
+           float gimbleMinDeg, float gimbleMaxDeg,
            float servoMinDeg, float servoMaxDeg,
            float servoRangeMinDeg, float servoRangeMaxDeg,
            uint16_t minUs, uint16_t maxUs,
            float maxSlewDegPerUpdate,
            float servoNeutralDeg, int8_t sign)
       : _drv(drv), _ch(channel), _lk(linkage),
+        _gimbleMin(gimbleMinDeg), _gimbleMax(gimbleMaxDeg),
         _servoMin(servoMinDeg), _servoMax(servoMaxDeg),
         _servoRangeMin(servoRangeMinDeg), _servoRangeMax(servoRangeMaxDeg),
         _minUs(minUs), _maxUs(maxUs),
@@ -46,7 +48,8 @@ public:
   void setDesiredThrustDeg(float betaRelDeg)
   {
     _manualOverride = false;
-    _desiredThrustDeg = betaRelDeg;
+
+    _desiredThrustDeg = util::clamp(betaRelDeg, _gimbleMin, _gimbleMax);
   }
 
   // Call each loop to apply slew-limit and write PWM
@@ -59,16 +62,14 @@ public:
       return;
     }
 
- /*** Old code for nuetral offset - Not needed on hornet as servo 0 is gimble 0
     float currentServoDelta = calculateInputAngle(_desiredThrustDeg);
     float servoDelta = currentServoDelta - _zeroServoDelta;
     float targetServo = _neutralDeg + _sign * servoDelta;
- */
-    float targetServo = calculateInputAngle(_desiredThrustDeg);
-
+ 
+    // float targetServo = calculateInputAngle(_desiredThrustDeg);
     _servoDegCmd = targetServo;
-\
-    writeServo(0);
+
+    writeServo(_servoDegCmd);
   }
 
   float commandedThrustDeg() const { return _desiredThrustDeg; }
@@ -97,13 +98,13 @@ public:
 private:
   float calculateInputAngle(float beta_final_deg) const
   {
-    // placeholder for linkage inverse kinematics, linear scale from -12 to 12
+    // placeholder for linkage inverse kinematics, linear scale on the gimble range
 
     return util::mapFloat(beta_final_deg,
-                            -12,
-                            12,
-                            -90,
-                            90);
+                            _gimbleMin,
+                            _gimbleMax,
+                            _servoMin,
+                            _servoMax);
   }
 
   void writeServo(float servoDeg)
@@ -124,6 +125,7 @@ private:
   PWMDriver &_drv;
   uint8_t _ch;
   Linkage _lk;
+  float _gimbleMin, _gimbleMax;
   float _servoMin, _servoMax;
   float _servoRangeMin, _servoRangeMax;
   uint16_t _minUs, _maxUs;

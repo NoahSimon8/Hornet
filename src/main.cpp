@@ -41,21 +41,21 @@ const double loopFreq = 100.0; // Hz
 constexpr float DEG2RAD_F = 0.0174532925f;
 
 // Mounting offset between IMU sensor frame and rocket body frame (deg)
-constexpr float SENSOR_TO_BODY_YAW_DEG = 45.0f;
+float SENSOR_TO_BODY_YAW_DEG = -8.1f;
 constexpr float SENSOR_TO_BODY_PITCH_DEG = 90.0f;
 constexpr float SENSOR_TO_BODY_ROLL_DEG = 180.0f;
 
 // ---------- Global hardware objects ----------
 PWMDriver pwm;
-ESC esc1(pwm, CH_ESC1, 1100, 2000);
-ESC esc2(pwm, CH_ESC2, 1100, 2000);
+ESC esc1(pwm, CH_ESC1, 1120, 2000);
+ESC esc2(pwm, CH_ESC2, 1120, 2000);
 IMU imu(0x4B, Wire);
 
 // Linkage numbers — copy your real values here
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
 TVCServo::Linkage linkY{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
-TVCServo tvcX(pwm, CH_SERVO_X, linkX, -90, 90, -90, 90, 500, 2500, 2.0f, angleXNeutral, +1);
-TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 90, -90, 90, 500, 2500, 2.0f, angleYNeutral, -1);
+TVCServo tvcX(pwm, CH_SERVO_X, linkX, -12, 12, -90, 90, -90, 90, 500, 2500, 2.0f, angleXNeutral, -1);
+TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -12, 12, -90, 90, -90, 90, 500, 2500, 2.0f, angleYNeutral, +1);
 
 // ---------- PID controllers ----------
 // PID pidRoll(0.8, 0.05, 0.1);  // needs tuning
@@ -66,8 +66,8 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -90, 90, -90, 90, 500, 2500, 2.0f, angleYN
 // PID pidZ(1, 0, 0);            // needs tuning
 // PID pidZVelocity(1, 0, 0);    // needs tuning
 
-PID pidRoll(0.8, 0.1, 0.0);  // needs tuning
-PID pidPitch(0.8, 0.1, 0.0); // needs tuning
+PID pidRoll(0.8, 0.05, 0.1);  // needs tuning 0.8, 0.1, 0.0
+PID pidPitch(0.8, 0.05, 0.1); // needs tuning
 PID pidHeading(0, 0, 0);     // needs tuning
 PID pidX(0, 0, 0);           // needs tuning
 PID pidY(0, 0, 0);           // needs tuning
@@ -104,6 +104,9 @@ double loopTime = 0.0;
 double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
 bool stopped = false;
+double targetThrottlePower = 0.0;
+double throttlePower=0.0;
+double throttleRateLimitPerSecond = 0.2; // how fast we can change throttle (per second)
 
 // ---------- Host heartbeat failsafe ----------
 // The PC-side live plotter sends "hb" lines periodically.
@@ -136,7 +139,6 @@ static inline void checkHeartbeatFailsafe()
         }
     }
 }
-double throttlePower=0.0;
 
 // ---------- data logging ----------
 
@@ -156,7 +158,7 @@ void printStatus(float throttle01A, float throttle01B)
     printWithComma(esc1.lastUs());
     printWithComma(throttle01A);
     printWithComma(tvcX.commandedThrustDeg());
-    printWithComma(tvcY.commandedThrustDeg());
+    printWithComma(tvcY.commandedServoDeg());
     printWithComma(static_cast<int>(imu.rotationAccuracy()));
 
     printWithComma(state.pitch);
@@ -292,7 +294,48 @@ void setup()
 void parseToken(const String &token)
 {
 
-    if (token.startsWith("kp="))
+
+    if (token.startsWith("t="))
+    {
+        String val = token.substring(3);
+        float thPow = val.toFloat();
+        if (thPow != 0.0 || val == "0" || val == "0.0")
+        {
+            targetThrottlePower = thPow;
+            Serial.print("tp= ");
+            Serial.println(thPow);
+        }
+    }
+    else if (token.equals("]"))
+    {
+        targetThrottlePower += 0.02;
+        Serial.print("tp= ");
+        Serial.println(targetThrottlePower);
+    }
+    else if (token.equals("["))
+    {
+        targetThrottlePower -= 0.02;
+        Serial.print("tp= ");
+        Serial.println(targetThrottlePower);
+    }
+    else if (token.equals("r-pid"))
+    {
+        pidHeading.reset();
+        pidRoll.reset();
+        pidPitch.reset();
+        pidX.reset();
+        pidY.reset();
+        pidZ.reset();
+        pidZVelocity.reset();
+        Serial.println("PIDs reset.");
+    }
+    else if (token.equals("r-h"))
+    {
+        SENSOR_TO_BODY_YAW_DEG += imu.yawDeg();
+        imu.setSensorToBodyEuler(SENSOR_TO_BODY_YAW_DEG, SENSOR_TO_BODY_PITCH_DEG, SENSOR_TO_BODY_ROLL_DEG);
+
+    }
+    else if (token.startsWith("kp="))
     {
         String val = token.substring(3);
         float newKp = val.toFloat();
@@ -302,17 +345,6 @@ void parseToken(const String &token)
             pidPitch.setP(newKp);
             Serial.print("Updated kp to: ");
             Serial.println(newKp);
-        }
-    }
-    else if (token.startsWith("t="))
-    {
-        String val = token.substring(3);
-        float thPow = val.toFloat();
-        if (thPow != 0.0 || val == "0" || val == "0.0")
-        {
-            throttlePower = thPow;
-            Serial.print("Updated throttle power to: ");
-            Serial.println(thPow);
         }
     }
     else if (token.startsWith("ki="))
@@ -525,6 +557,8 @@ void loop()
         tvcY.update();
         printStatus(0.0f, 0.0f);
         delay(50);
+        throttlePower=0;
+        targetThrottlePower = 0;
         return;
     }
 
@@ -579,6 +613,21 @@ void loop()
     throttle01a = 0.0;
     throttle01b = 0.0;
 
+
+    // Rate Limiter for Throttle Power
+    if (throttlePower < targetThrottlePower)
+    {
+        throttlePower += throttleRateLimitPerSecond * deltaTime;
+        if (throttlePower > targetThrottlePower)
+            throttlePower = targetThrottlePower;
+    }
+    else if (throttlePower > targetThrottlePower)
+    {
+        throttlePower -= throttleRateLimitPerSecond * deltaTime;
+        if (throttlePower < targetThrottlePower)
+            throttlePower = targetThrottlePower;
+    }
+    
     esc1.setThrottle01(throttlePower);
     esc2.setThrottle01(throttlePower);
     esc1.update();
@@ -586,7 +635,7 @@ void loop()
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
 
-    if (loopCount % static_cast<int>(loopFreq / 50) == 0)
+    if (loopCount % static_cast<int>(loopFreq / 20) == 0)
     {
         printStatus(throttle01a, throttle01b);
     }
