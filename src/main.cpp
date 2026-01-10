@@ -21,14 +21,12 @@ constexpr uint8_t PIN_ESC2 = 10;
 // Logical channels inside PWMDriver (kept so ESC/TVCServo code stays the same)
 constexpr uint8_t CH_SERVO_X = 0;
 constexpr uint8_t CH_SERVO_Y = 1;
-constexpr uint8_t CH_ESC1   = 2;
-constexpr uint8_t CH_ESC2   = 3;
+constexpr uint8_t CH_ESC1 = 2;
+constexpr uint8_t CH_ESC2 = 3;
 
 constexpr uint8_t PIN_POT = A2;
 
 // ---------- Global hardware objects ----------
-
-
 
 // ---------- Constants ----------
 
@@ -41,7 +39,7 @@ const double loopFreq = 100.0; // Hz
 constexpr float DEG2RAD_F = 0.0174532925f;
 
 // Mounting offset between IMU sensor frame and rocket body frame (deg)
-float SENSOR_TO_BODY_YAW_DEG = -8.1f;
+float SENSOR_TO_BODY_YAW_DEG = -9.0f;
 constexpr float SENSOR_TO_BODY_PITCH_DEG = 90.0f;
 constexpr float SENSOR_TO_BODY_ROLL_DEG = 180.0f;
 
@@ -66,13 +64,13 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -12, 12, -90, 90, -90, 90, 500, 2500, 2.0f
 // PID pidZ(1, 0, 0);            // needs tuning
 // PID pidZVelocity(1, 0, 0);    // needs tuning
 
-PID pidRoll(0.8, 0.05, 0.1);  // needs tuning 0.8, 0.1, 0.0
-PID pidPitch(0.8, 0.05, 0.1); // needs tuning
-PID pidHeading(0, 0, 0);     // needs tuning
-PID pidX(0, 0, 0);           // needs tuning
-PID pidY(0, 0, 0);           // needs tuning
-PID pidZ(0, 0, 0);           // needs tuning
-PID pidZVelocity(0, 0, 0);   // needs tuning
+PID pidRoll(0.3, 0.01, 0.0);  // needs tuning 0.8, 0.1, 0.0
+PID pidPitch(0.3, 0.01, 0.0); // needs tuning
+PID pidHeading(0, 0, 0);      // needs tuning
+PID pidX(0, 0, 0);            // needs tuning
+PID pidY(0, 0, 0);            // needs tuning
+PID pidZ(0, 0, 0);            // needs tuning
+PID pidZVelocity(0, 0, 0);    // needs tuning
 // ---------- Simple runtime state ----------
 
 struct Ref
@@ -105,14 +103,14 @@ double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
 bool stopped = false;
 double targetThrottlePower = 0.0;
-double throttlePower=0.0;
+double throttlePower = 0.0;
 double throttleRateLimitPerSecond = 0.2; // how fast we can change throttle (per second)
-
+int calibrationMode = 0;                  // 0=normal, 1=high pwm, 2=low pwm
 // ---------- Host heartbeat failsafe ----------
 // The PC-side live plotter sends "hb" lines periodically.
 // If we stop receiving them for > HEARTBEAT_TIMEOUT_MS (after we've seen at least one),
 // we force stopped=true to put outputs into a safe state.
-constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 800;  // must be > heartbeat period on PC
+constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 800; // must be > heartbeat period on PC
 static uint32_t lastHeartbeatMs = 0;
 static bool heartbeatSeen = false;
 static bool heartbeatLostLatched = false;
@@ -125,8 +123,10 @@ static inline void noteHeartbeat()
 
 static inline void checkHeartbeatFailsafe()
 {
-    if (!heartbeatSeen) return;                 // don't enforce until we've seen the host at least once
-    if (stopped) return;                        // already stopped
+    if (!heartbeatSeen)
+        return; // don't enforce until we've seen the host at least once
+    if (stopped)
+        return; // already stopped
     const uint32_t now = millis();
     if ((uint32_t)(now - lastHeartbeatMs) > HEARTBEAT_TIMEOUT_MS)
     {
@@ -194,6 +194,16 @@ void centerTVC()
 
     tvcY.setDesiredThrustDeg(0);
 }
+void resetPIDs()
+{
+    pidHeading.reset();
+    pidRoll.reset();
+    pidPitch.reset();
+    pidX.reset();
+    pidY.reset();
+    pidZ.reset();
+    pidZVelocity.reset();
+}
 
 void setup()
 {
@@ -202,19 +212,18 @@ void setup()
     {
     }
 
-    #ifdef TEENSYDUINO
-  Serial.print("TEENSYDUINO defined, version = ");
-  Serial.println(TEENSYDUINO);
-    #else
+#ifdef TEENSYDUINO
+    Serial.print("TEENSYDUINO defined, version = ");
+    Serial.println(TEENSYDUINO);
+#else
     Serial.println("TENSYDUINO NOT defined");
-    #endif
+#endif
 
-    #ifdef ARDUINO_TEENSY41
+#ifdef ARDUINO_TEENSY41
     Serial.println("ARDUINO_TEENSY41 defined");
-    #else
+#else
     Serial.println("ARDUINO_TEENSY41 NOT defined");
-    #endif
-    
+#endif
 
     // PWM driver for servos/ESCx
     pwm.begin(50.0f);
@@ -224,8 +233,8 @@ void setup()
     // Attach logical channels to Teensy pins
     pwm.attach(CH_SERVO_X, PIN_SERVO_X, 1500);
     pwm.attach(CH_SERVO_Y, PIN_SERVO_Y, 1500);
-    pwm.attach(CH_ESC1,   PIN_ESC1,   1000);
-    pwm.attach(CH_ESC2,   PIN_ESC2,   1000);
+    pwm.attach(CH_ESC1, PIN_ESC1, 1000);
+    pwm.attach(CH_ESC2, PIN_ESC2, 1000);
 
     // Bring servos to neutral
     centerTVC();
@@ -234,7 +243,7 @@ void setup()
     esc2.arm(1000, 1000);
     esc1.setMicroseconds(1000);
     esc2.setMicroseconds(1000);
-    
+
     // IMU
     Wire2.begin();          // Teensy 4.1: SDA2=25, SCL2=24
     Wire2.setClock(400000); // start at 100 kHz
@@ -280,7 +289,6 @@ void setup()
     Serial.println(F("[fly] reference orientation captured."));
     Serial.println(F("[fly] IMU ok."));
 
-
     pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
     pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
 
@@ -293,7 +301,6 @@ void setup()
 // Parse a token that might be "kp=...", "ki=...", "kd=...", or single-char commands.
 void parseToken(const String &token)
 {
-
 
     if (token.startsWith("t="))
     {
@@ -308,32 +315,25 @@ void parseToken(const String &token)
     }
     else if (token.equals("]"))
     {
-        targetThrottlePower += 0.02;
+        targetThrottlePower += 0.005;
         Serial.print("tp= ");
         Serial.println(targetThrottlePower);
     }
     else if (token.equals("["))
     {
-        targetThrottlePower -= 0.02;
+        targetThrottlePower -= 0.005;
         Serial.print("tp= ");
         Serial.println(targetThrottlePower);
     }
     else if (token.equals("r-pid"))
     {
-        pidHeading.reset();
-        pidRoll.reset();
-        pidPitch.reset();
-        pidX.reset();
-        pidY.reset();
-        pidZ.reset();
-        pidZVelocity.reset();
+        resetPIDs();
         Serial.println("PIDs reset.");
     }
     else if (token.equals("r-h"))
     {
         SENSOR_TO_BODY_YAW_DEG += imu.yawDeg();
         imu.setSensorToBodyEuler(SENSOR_TO_BODY_YAW_DEG, SENSOR_TO_BODY_PITCH_DEG, SENSOR_TO_BODY_ROLL_DEG);
-
     }
     else if (token.startsWith("kp="))
     {
@@ -411,6 +411,14 @@ void parseToken(const String &token)
             }
         }
     }
+    else if (token.equals("cal"))
+    {
+        calibrationMode += 1;
+        if (calibrationMode > 2)
+        {
+            calibrationMode = 0;
+        }
+    }
 }
 
 // Function to process incoming serial commands
@@ -427,7 +435,8 @@ void processSerialCommands()
             stopped = !stopped;
             if (stopped)
                 Serial.println(F("[fly] Stopped"));
-            else {
+            else
+            {
                 // allow future heartbeat-loss message after a manual restart
                 heartbeatLostLatched = false;
                 Serial.println(F("[fly] Restarted"));
@@ -542,12 +551,41 @@ void updateState()
     // state.zAcc = la.z;
 }
 
+void calibration(){
+    switch (calibrationMode)
+    {
+    case 1:
+        // high pwm for ESC calibration
+        esc1.setMicroseconds(2000);
+        esc2.setMicroseconds(2000);
+        break;
+    case 2:
+        // low pwm for ESC calibration
+        esc1.setMicroseconds(1000);
+        esc2.setMicroseconds(1000);
+        break;
+    default:
+        calibrationMode = 0;
+        break;
+    }
+}
+
 void loop()
 {
-    // For maintaining a steady loop rate
     double loopstartTimestampUS = micros();
     processSerialCommands();
     checkHeartbeatFailsafe();
+    if (calibrationMode){
+        calibration();
+        centerTVC();
+        tvcX.update();
+        tvcY.update();
+        throttlePower = 0;
+        targetThrottlePower = 0;
+        resetPIDs();
+        printStatus(0.0f, 0.0f);
+        return;    }    
+
     if (stopped)
     {
         esc1.setMicroseconds(1000);
@@ -555,10 +593,11 @@ void loop()
         centerTVC();
         tvcX.update();
         tvcY.update();
+        throttlePower = 0;
+        targetThrottlePower = 0;
+        resetPIDs();
         printStatus(0.0f, 0.0f);
         delay(50);
-        throttlePower=0;
-        targetThrottlePower = 0;
         return;
     }
 
@@ -578,25 +617,6 @@ void loop()
     tvcX.setDesiredThrustDeg(pidOut[0]);
     tvcY.setDesiredThrustDeg(pidOut[1]);
 
-    // centerTVC();
-    // int speed = 4;
-    // int min = 500;
-    // int max = 2500;
-    // if (loopCount%(2 * (max-min) / speed) < ((max-min) / speed))
-    // {   
-    //     // if (loopCount%12 == 0){
-    //         tvcX.setManualServoUs(min+loopCount%((max-min)/speed) * speed);
-    //         tvcY.setManualServoUs(min+loopCount%((max-min)/speed) * speed);
-    //     // }
-    // } else {
-    //     // if (loopCount%12 == 0){
-    //         tvcX.setManualServoUs(max - (loopCount%((max-min)/speed) * speed));
-    //         tvcY.setManualServoUs(max - (loopCount%((max-min)/speed) * speed));
-    //     // }
-    // }
- 
- 
-
     // // Apply servo updates (slew limiting + PWM)
     tvcX.update();
     tvcY.update();
@@ -613,7 +633,6 @@ void loop()
     throttle01a = 0.0;
     throttle01b = 0.0;
 
-
     // Rate Limiter for Throttle Power
     if (throttlePower < targetThrottlePower)
     {
@@ -627,11 +646,17 @@ void loop()
         if (throttlePower < targetThrottlePower)
             throttlePower = targetThrottlePower;
     }
-    
+
     esc1.setThrottle01(throttlePower);
     esc2.setThrottle01(throttlePower);
     esc1.update();
     esc2.update();
+
+    // don't want PID gaining windup when throttle is zero
+    if (throttlePower == 0.0)
+    {
+        resetPIDs();
+    }
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
 
