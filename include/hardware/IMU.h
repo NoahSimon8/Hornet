@@ -42,7 +42,7 @@ struct ProjectedAngles
 class IMU
 {
 public:
-  explicit IMU(uint8_t i2cAddr = 0x4B, TwoWire &wirePort = Wire2)
+  explicit IMU(uint8_t i2cAddr = 0x4B, TwoWire &wirePort = Wire)
       : _addr(i2cAddr), _wire(&wirePort) {}
 
   bool begin()

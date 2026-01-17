@@ -5,6 +5,7 @@
 #include "hardware/PWMDriver.h"
 #include "hardware/ESC.h"
 #include "hardware/TVCServo.h"
+#include "hardware/LIDAR.h"
 #include "util/Math.h"
 #include "util/PID.h"
 #include "util/mekf2.h"
@@ -48,6 +49,7 @@ PWMDriver pwm;
 ESC esc1(pwm, CH_ESC1, 1120, 2000);
 ESC esc2(pwm, CH_ESC2, 1120, 2000);
 IMU imu(0x4B, Wire);
+LIDAR lidar(Wire2);
 
 // Linkage numbers — copy your real values here
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
@@ -102,9 +104,9 @@ double loopTime = 0.0;
 double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
 bool stopped = false;
-double targetThrottlePower = 0.0;
-double throttlePower = 0.0;
-double throttleRateLimitPerSecond = 0.2; // how fast we can change throttle (per second)
+float targetThrottlePower = 0.0;
+float throttlePower = 0.0;
+float throttleRateLimitPerSecond = 0.2; // how fast we can change throttle (per second)
 int calibrationMode = 0;                  // 0=normal, 1=high pwm, 2=low pwm
 // ---------- Host heartbeat failsafe ----------
 // The PC-side live plotter sends "hb" lines periodically.
@@ -288,6 +290,15 @@ void setup()
 
     Serial.println(F("[fly] reference orientation captured."));
     Serial.println(F("[fly] IMU ok."));
+
+
+    lidar.update();    
+    while (!lidar.hasData())
+    {
+        lidar.update();
+        Serial.println(F("[fly] waiting for LIDAR data..."));
+        delay(500);
+    }
 
     pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
     pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
@@ -511,10 +522,10 @@ float verticalPID(float dt)
     // outerloop on position
     if (loopCount % 3 == 0)
     {
-        desState.zVel = pidZ.calculate(desState.z, 0, dt);
+        desState.zVel = pidZ.calculate(desState.z, state.z, dt);
     }
     // innerloop on velocity
-    float desThrottle = pidZVelocity.calculate(desState.zVel, 0, dt);
+    float desThrottle = pidZVelocity.calculate(desState.zVel, state.zVel, dt);
     return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
 }
 
@@ -532,16 +543,30 @@ float headingPID(float dt)
 }
 
 void updateState()
-{
+{   
+    imu.update();
+    lidar.update();
 
-    auto e = imu.euler();
-    state.pitch = e.pitch - ref.pitch0;
-    state.roll = e.roll - ref.roll0;
+    if (imu.hasData())
+    {
+        // IMU orientation data
+        auto e = imu.euler();
+        state.pitch = e.pitch - ref.pitch0;
+        state.roll = e.roll - ref.roll0;
+    
+        auto a = imu.projectedAngles();
+        state.tiltX = a.tiltAboutX;
+        state.tiltY = a.tiltAboutY;
+        state.heading = a.heading;
+    }
 
-    auto a = imu.projectedAngles();
-    state.tiltX = a.tiltAboutX;
-    state.tiltY = a.tiltAboutY;
-    state.heading = a.heading;
+    if (lidar.hasData())
+    {
+        // LIDAR altitude data
+        float prevZ = state.z;
+        state.z = lidar.getDistance() * 0.01f; // convert cm to m
+        state.zVel = (state.z - prevZ) / loopFreq; // shoddy velocity measure (temperary) m/s
+    }
 
     // MEKF data for position and rates
 
@@ -601,7 +626,7 @@ void loop()
         return;
     }
 
-    imu.update();
+    
     // // Refresh IMU data
     updateState();
 
@@ -624,14 +649,7 @@ void loop()
     // get base throttle
     float throttle01 = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
 
-    throttle01 = util::clamp(throttle01, 0.0f, 1.0f); // for testing only
-
-    // calculate yaw correction
-    float yawAdjust = headingPID(deltaTime);
-    float throttle01a = util::clamp(throttle01 + yawAdjust, 0.0f, 1.0f);
-    float throttle01b = util::clamp(throttle01 - yawAdjust, 0.0f, 1.0f);
-    throttle01a = 0.0;
-    throttle01b = 0.0;
+    targetThrottlePower = util::clamp(throttle01, 0.0f, 1.0f); // for testing only
 
     // Rate Limiter for Throttle Power
     if (throttlePower < targetThrottlePower)
@@ -647,8 +665,17 @@ void loop()
             throttlePower = targetThrottlePower;
     }
 
-    esc1.setThrottle01(throttlePower);
-    esc2.setThrottle01(throttlePower);
+    // calculate yaw correction
+    float yawAdjust = headingPID(deltaTime);
+
+    float throttle01a = util::clamp(throttlePower + yawAdjust, 0.0f, 1.0f);
+    float throttle01b = util::clamp(throttlePower - yawAdjust, 0.0f, 1.0f);
+    throttle01a = 0.0;
+    throttle01b = 0.0;
+
+
+    esc1.setThrottle01(throttle01a);
+    esc2.setThrottle01(throttle01b);
     esc1.update();
     esc2.update();
 
