@@ -103,7 +103,7 @@ struct desState
 double loopTime = 0.0;
 double prevIMUTimestampUs = 0.0;
 int loopCount = 0;
-bool stopped = false;
+bool stopped = true;
 float targetThrottlePower = 0.0;
 float throttlePower = 0.0;
 float throttleRateLimitPerSecond = 0.2; // how fast we can change throttle (per second)
@@ -599,7 +599,9 @@ void loop()
 {
     double loopstartTimestampUS = micros();
     processSerialCommands();
-    checkHeartbeatFailsafe();
+    checkHeartbeatFailsafe(); // checks for computer disconnection
+    updateState(); // updates state variabels with sensor data
+
     if (calibrationMode){
         calibration();
         centerTVC();
@@ -609,7 +611,8 @@ void loop()
         targetThrottlePower = 0;
         resetPIDs();
         printStatus(0.0f, 0.0f);
-        return;    }    
+        return;   
+    }    
 
     if (stopped)
     {
@@ -625,10 +628,6 @@ void loop()
         delay(50);
         return;
     }
-
-    
-    // // Refresh IMU data
-    updateState();
 
     // record timestamp for PID use
     double IMUTimestampUs = micros();
