@@ -556,16 +556,16 @@ void updateState()
         state.roll = e.roll - ref.roll0;
     
         auto a = imu.projectedAngles();
-        state.tiltX = a.tiltAboutX;
+        state.tiltX = a.tiltAboutX; 
         state.tiltY = a.tiltAboutY;
         state.heading = a.heading;
     }
 
-    if (lidar.hasData())
+    if (lidarX.hasData())
     {
         // LIDAR altitude data
         float prevZ = state.z;
-        state.z = lidar.getDistance() * 0.01f; // convert cm to m
+        state.z = lidarX.getDistance() * 0.01f; // convert cm to m
         state.zVel = (state.z - prevZ) / loopFreq; // shoddy velocity measure (temperary) m/s
     }
 
