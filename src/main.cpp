@@ -49,7 +49,8 @@ PWMDriver pwm;
 ESC esc1(pwm, CH_ESC1, 1120, 2000);
 ESC esc2(pwm, CH_ESC2, 1120, 2000);
 IMU imu(0x4B, Wire);
-LIDAR lidar(Wire2);
+LIDAR lidarX(Wire2); // Not actually sure which one is X or Y, need to check later by cross-referencing TVC movement
+// LIDAR lidarY(Wire1);  <---- and this isn't currently plugged in
 
 // Linkage numbers — copy your real values here
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
@@ -292,10 +293,10 @@ void setup()
     Serial.println(F("[fly] IMU ok."));
 
 
-    lidar.update();    
-    while (!lidar.hasData())
+    lidarX.update();    
+    while (!lidarX.hasData())
     {
-        lidar.update();
+        lidarX.update();
         Serial.println(F("[fly] waiting for LIDAR data..."));
         delay(500);
     }
@@ -545,7 +546,7 @@ float headingPID(float dt)
 void updateState()
 {   
     imu.update();
-    lidar.update();
+    lidarX.update();
 
     if (imu.hasData())
     {
