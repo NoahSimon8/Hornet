@@ -627,6 +627,10 @@ void loop()
         resetPIDs();
         printStatus(0.0f, 0.0f);
         delay(50);
+
+        Serial.print("Lidar X distance (m): ");
+        Serial.println(state.z);
+
         return;
     }
 
