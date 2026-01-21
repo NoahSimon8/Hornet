@@ -294,12 +294,12 @@ void setup()
 
 
     lidarX.update();    
-    while (!lidarX.hasData())
-    {
-        lidarX.update();
-        Serial.println(F("[fly] waiting for LIDAR data..."));
-        delay(500);
-    }
+    // while (!lidarX.hasData())
+    // {
+    //     lidarX.update();
+    //     Serial.println(F("[fly] waiting for LIDAR data..."));
+    //     delay(500);
+    // }
 
     pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
     pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
@@ -628,8 +628,8 @@ void loop()
         printStatus(0.0f, 0.0f);
         delay(50);
 
-        Serial.print("Lidar X distance (m): ");
-        Serial.println(state.z);
+        // Serial.print("Lidar hasData: ");
+        // Serial.println(lidarX.hasData());
 
         return;
     }

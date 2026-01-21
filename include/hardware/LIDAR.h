@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <Wire.h>
-#include <TFLI2C.h>
+#include "TFLI2C.h"
 
 
 class LIDAR
@@ -10,17 +10,22 @@ public:
     explicit LIDAR(TwoWire &wirePort = Wire2, uint8_t drdy_pin = 26)
       : _wire(&wirePort), _drdy_pin(drdy_pin) {}
 
+    void printStatus(){
+        _tfluna.printStatus();
+        Serial.println();
+    }
 
     void setup()
     {   
+        _wire->setSDA(25); // Teensy 4.1: SDA2=25, SCL2=24
+        _wire->setSCL(24);
         _wire->begin();
-        _wire->setClock(400000); // 400 kHz
+        
+        _tfluna.setWirePort(*_wire);
         pinMode(_drdy_pin, INPUT);
         
-        _tfluna.setWirePort(*_wire); // <-- IMPORTANT: make library use Wire2
-
         if(!_tfluna.Set_Frame_Rate( _tfFrame, _addr)){
-            _tfluna.printStatus();
+            printStatus();
         }
         _tfluna.Set_Cont_Mode(_addr); // set to continuous mode
         _tfluna.Save_Settings(_addr); // save frame rate setting
@@ -33,12 +38,13 @@ public:
 
     void update(){
         if (digitalRead(_drdy_pin) == HIGH){
-
             if (_tfluna.getData(_distance, _signalStrength, _temperature, _addr)){// writes to the variables
                 _tfluna.Get_Time(_tfTime, _addr); // updates internal clock
+                
                 _hasData = true;
             } else {
-                _tfluna.printStatus();         
+                printStatus();
+
                 _hasData = false;
             }
         } else {
