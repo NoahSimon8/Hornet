@@ -15,12 +15,12 @@ public:
         Serial.println();
     }
 
-    void setup()
+    void begin()
     {   
         _wire->setSDA(25); // Teensy 4.1: SDA2=25, SCL2=24
         _wire->setSCL(24);
         _wire->begin();
-        
+
         _tfluna.setWirePort(*_wire);
         pinMode(_drdy_pin, INPUT);
         
@@ -37,17 +37,23 @@ public:
     }
 
     void update(){
+
+
         if (digitalRead(_drdy_pin) == HIGH){
             if (_tfluna.getData(_distance, _signalStrength, _temperature, _addr)){// writes to the variables
-                _tfluna.Get_Time(_tfTime, _addr); // updates internal clock
+                // _tfluna.Get_Time(_tfTime, _addr); // updates internal clock
                 
                 _hasData = true;
             } else {
                 printStatus();
+                Serial.println();
+
 
                 _hasData = false;
             }
         } else {
+            Serial.println("LIDAR data not ready");
+
             _hasData = false;
         }
     }

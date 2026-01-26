@@ -113,6 +113,8 @@ class TFLI2C
     bool Get_Frame_Rate( uint16_t &frm, uint8_t adr);
     bool Get_Prod_Code( uint8_t cod[], uint8_t adr);
     bool Get_Time( uint16_t &tim, uint8_t adr);
+    TwoWire* getWirePort() const { return _wire; }
+
 
     bool Set_Frame_Rate( uint16_t &frm, uint8_t adr);
     bool Set_I2C_Addr( uint8_t adrNew, uint8_t adr);
@@ -128,9 +130,10 @@ class TFLI2C
     //  For testing purposes: print reply data and status
     void printDataArray();
     void printStatus();
+    uint8_t lastI2cErr() const { return _lastErr; }
 
   private:
-
+    uint8_t _lastErr;
     uint8_t tfStatus;        // system error status: READY = 0
     uint8_t dataArray[ 6];
     uint8_t regReply;
