@@ -40,7 +40,7 @@ const double loopFreq = 100.0; // Hz
 constexpr float DEG2RAD_F = 0.0174532925f;
 
 // Mounting offset between IMU sensor frame and rocket body frame (deg)
-float SENSOR_TO_BODY_YAW_DEG = -9.0f;
+float SENSOR_TO_BODY_YAW_DEG = -7.9f;
 constexpr float SENSOR_TO_BODY_PITCH_DEG = 90.0f;
 constexpr float SENSOR_TO_BODY_ROLL_DEG = 180.0f;
 
@@ -67,13 +67,14 @@ TVCServo tvcY(pwm, CH_SERVO_Y, linkY, -12, 12, -90, 90, -90, 90, 500, 2500, 2.0f
 // PID pidZ(1, 0, 0);            // needs tuning
 // PID pidZVelocity(1, 0, 0);    // needs tuning
 
-PID pidRoll(0.3, 0.01, 0.0);  // needs tuning 0.8, 0.1, 0.0
-PID pidPitch(0.3, 0.01, 0.0); // needs tuning
-PID pidHeading(0, 0, 0);      // needs tuning
-PID pidX(0, 0, 0);            // needs tuning
-PID pidY(0, 0, 0);            // needs tuning
-PID pidZ(0, 0, 0);            // needs tuning
-PID pidZVelocity(0, 0, 0);    // needs tuning
+PID pidRoll(0.385, 0.0, 0.44);   // needs tuning 0.375, 0.1, 0.425
+PID pidPitch(0.385, 0.0, 0.44);   // needs tuning
+PID pidHeading(0.00, 0, 0.004); // needs tuning
+PID pidX(0, 0, 0);              // needs tuning
+PID pidY(0, 0, 0);              // needs tuning
+PID pidZ(0.075, 0.01, 0);       // 0.05, 0.005, 0
+PID pidZVelocity(0, 0, 0);      // needs tuning
+double throttleFeedforward = 0.795;
 // ---------- Simple runtime state ----------
 
 struct Ref
@@ -95,7 +96,7 @@ struct desState
 {
     float pitch{0}, roll{0};
     float heading{0}, tiltX{0}, tiltY{0};
-    float x{0}, y{0}, z{1};
+    float x{0}, y{0}, z{1.5};
     float zVel{0};
 } desState;
 
@@ -107,8 +108,8 @@ int loopCount = 0;
 bool stopped = true;
 float targetThrottlePower = 0.0;
 float throttlePower = 0.0;
-float throttleRateLimitPerSecond = 0.2; // how fast we can change throttle (per second)
-int calibrationMode = 0;                  // 0=normal, 1=high pwm, 2=low pwm
+float throttleRateLimitPerSecond = 0.05; // how fast we can change throttle (per second)
+int calibrationMode = 0;                // 0=normal, 1=high pwm, 2=low pwm
 // ---------- Host heartbeat failsafe ----------
 // The PC-side live plotter sends "hb" lines periodically.
 // If we stop receiving them for > HEARTBEAT_TIMEOUT_MS (after we've seen at least one),
@@ -158,8 +159,8 @@ void printStatus(float throttle01A, float throttle01B)
     //     Serial.println(F("[fly] IMU has no data."));
     // }
 
-    printWithComma(esc1.lastUs());
     printWithComma(throttle01A);
+    printWithComma(throttle01B);
     printWithComma(state.z);
     printWithComma(state.z);
     printWithComma(static_cast<int>(imu.rotationAccuracy()));
@@ -215,18 +216,18 @@ void setup()
     {
     }
 
-    #ifdef TEENSYDUINO
-        Serial.print("TEENSYDUINO defined, version = ");
-        Serial.println(TEENSYDUINO);
-    #else
-        Serial.println("TENSYDUINO NOT defined");
-    #endif
+#ifdef TEENSYDUINO
+    Serial.print("TEENSYDUINO defined, version = ");
+    Serial.println(TEENSYDUINO);
+#else
+    Serial.println("TENSYDUINO NOT defined");
+#endif
 
-    #ifdef ARDUINO_TEENSY41
-        Serial.println("ARDUINO_TEENSY41 defined");
-    #else
-        Serial.println("ARDUINO_TEENSY41 NOT defined");
-    #endif
+#ifdef ARDUINO_TEENSY41
+    Serial.println("ARDUINO_TEENSY41 defined");
+#else
+    Serial.println("ARDUINO_TEENSY41 NOT defined");
+#endif
 
     // PWM driver for servos/ESCx
     pwm.begin(50.0f);
@@ -247,7 +248,6 @@ void setup()
     esc1.setMicroseconds(1000);
     esc2.setMicroseconds(1000);
 
-   
     while (!imu.begin())
     {
         Serial.println(F("[fly] IMU failed to start."));
@@ -281,9 +281,9 @@ void setup()
 
     lidarX.begin();
     lidarY.begin();
-    lidarX.update();    
+    lidarX.update();
     lidarY.update();
-    while (!lidarY.hasData()||
+    while (!lidarY.hasData() ||
            !lidarX.hasData())
     {
 
@@ -300,10 +300,13 @@ void setup()
         delay(500);
     }
 
-
-
     pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
     pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
+    pidRoll.setDerivativeLowPass(10.0);  // 10 Hz
+    pidPitch.setDerivativeLowPass(10.0); // 10 Hz
+
+    pidZ.setIntegralZone(0.05); // only use intelgral within 30 cm of target
+    pidZ.setOutputLimits(-0.075, 0.075);
 
     Serial.println(F("[fly] setup complete."));
 
@@ -315,28 +318,28 @@ void setup()
 void parseToken(const String &token)
 {
 
-    if (token.startsWith("t="))
+    if (token.startsWith("tff="))
     {
         String val = token.substring(3);
         float thPow = val.toFloat();
         if (thPow != 0.0 || val == "0" || val == "0.0")
         {
-            targetThrottlePower = thPow;
-            Serial.print("tp= ");
-            Serial.println(thPow);
+            throttleFeedforward = thPow;
+            Serial.print("tff= ");
+            Serial.println(throttleFeedforward);
         }
     }
     else if (token.equals("]"))
     {
-        targetThrottlePower += 0.005;
-        Serial.print("tp= ");
-        Serial.println(targetThrottlePower);
+        throttleFeedforward += 0.005;
+        Serial.print("tff= ");
+        Serial.println(throttleFeedforward);
     }
     else if (token.equals("["))
     {
-        targetThrottlePower -= 0.005;
-        Serial.print("tp= ");
-        Serial.println(targetThrottlePower);
+        throttleFeedforward -= 0.005;
+        Serial.print("tff= ");
+        Serial.println(throttleFeedforward);
     }
     else if (token.equals("r-pid"))
     {
@@ -518,34 +521,40 @@ std::array<float, 2> lateralPID(float dt)
     return rotationalPID(dt);
 }
 
+// // returns desired throttle 0..1
+// float verticalCascadingPID(float dt)
+// {
+//     // outerloop on position
+//     if (loopCount % 3 == 0)
+//     {
+//         desState.zVel = pidZ.calculate(desState.z, state.z, dt);
+//     }
+//     // innerloop on velocity
+//     float desThrottle = pidZVelocity.calculate(desState.zVel, state.zVel, dt);
+//     return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
+// }
 // returns desired throttle 0..1
 float verticalPID(float dt)
 {
-    // outerloop on position
-    if (loopCount % 3 == 0)
-    {
-        desState.zVel = pidZ.calculate(desState.z, state.z, dt);
-    }
-    // innerloop on velocity
-    float desThrottle = pidZVelocity.calculate(desState.zVel, state.zVel, dt);
-    return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
+    float desThrottle = throttleFeedforward + pidZ.calculate(desState.z, state.z, dt);
+    return util::clamp(desThrottle, 0.0f, 1.0f);
 }
 
 // returns a desired constant, -1..1 to add to ESC 1, subtract from ESC 2
 float headingPID(float dt)
 {
     float headingError = desState.heading - state.heading;
-    if (headingError > 180.0f)
-        headingError -= 360.0f;
-    if (headingError < -180.0f)
-        headingError += 360.0f;
+    // if (headingError > 180.0f)
+    //     headingError -= 360.0f;
+    // if (headingError < -180.0f)
+    //     headingError += 360.0f;
 
-    float out = pidHeading.calculate(0.0f, -headingError, dt); // negative error maybe?
+    float out = pidHeading.calculate(desState.heading, -headingError, dt); // negative error maybe?
     return out;
 }
 
 void updateState()
-{   
+{
     imu.update();
     lidarX.update();
     lidarY.update();
@@ -556,16 +565,16 @@ void updateState()
         auto e = imu.euler();
         state.pitch = e.pitch - ref.pitch0;
         state.roll = e.roll - ref.roll0;
-    
+
         auto a = imu.projectedAngles();
-        state.tiltX = a.tiltAboutX; 
+        state.tiltX = a.tiltAboutX;
         state.tiltY = a.tiltAboutY;
         state.heading = a.heading;
     }
 
     // LIDAR altitude data
-    float xHeight= lidarX.hasData() ? lidarX.getDistance() * 0.01f : -1.0f; // in meters
-    float yHeight= lidarY.hasData() ? lidarY.getDistance() * 0.01f : -1.0f; // in meters
+    float xHeight = lidarX.getDistance() * 0.01f; // in meters
+    float yHeight = lidarY.getDistance() * 0.01f; // in meters
     float prevZ = state.z;
 
     if (xHeight > 0.0f && yHeight > 0.0f)
@@ -580,8 +589,9 @@ void updateState()
     {
         state.z = yHeight;
     }
-    if (abs(state.z - prevZ) > 10.0f){
-        stopped=true;
+    if (abs(state.z - prevZ) > 10.0f)
+    {
+        stopped = true;
         Serial.println(F("[fly] LIDAR jump detected, stopping."));
     }
     state.zVel = (state.z - prevZ) / loopFreq; // questionable velocity measure (temperary) m/s
@@ -594,7 +604,8 @@ void updateState()
     // state.zAcc = la.z;
 }
 
-void calibration(){
+void calibration()
+{
     switch (calibrationMode)
     {
     case 1:
@@ -618,9 +629,14 @@ void loop()
     double loopstartTimestampUS = micros();
     processSerialCommands();
     checkHeartbeatFailsafe(); // checks for computer disconnection
-    updateState(); // updates state variabels with sensor data
+    updateState();            // updates state variabels with sensor data
+    // record timestamp for PID use
+    double IMUTimestampUs = micros();
+    double deltaTime = util::clamp((IMUTimestampUs - prevIMUTimestampUs) * 1e-6,0.0,0.02); // seconds
+    prevIMUTimestampUs = IMUTimestampUs;
 
-    if (calibrationMode){
+    if (calibrationMode)
+    {
         calibration();
         centerTVC();
         tvcX.update();
@@ -629,8 +645,8 @@ void loop()
         targetThrottlePower = 0;
         resetPIDs();
         printStatus(0.0f, 0.0f);
-        return;   
-    }    
+        return;
+    }
 
     if (stopped)
     {
@@ -643,16 +659,13 @@ void loop()
         targetThrottlePower = 0;
         resetPIDs();
         printStatus(0.0f, 0.0f);
-        
+        desState.heading = state.heading; // prevent yaw jump on restart
+
         delay(50);
 
         return;
     }
 
-    // record timestamp for PID use
-    double IMUTimestampUs = micros();
-    double deltaTime = (IMUTimestampUs - prevIMUTimestampUs) * 1e-6; // seconds
-    prevIMUTimestampUs = IMUTimestampUs;
 
     // get desired thrust angles
     std::array<float, 2> pidOut = lateralPID(deltaTime); // level flight at origin
@@ -667,8 +680,6 @@ void loop()
 
     // get base throttle
     float targetThrottlePower = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
-
-    targetThrottlePower = util::clamp(targetThrottlePower, 0.0f, 1.0f); 
 
     // Rate Limiter for Throttle Power
     if (throttlePower < targetThrottlePower)
@@ -686,20 +697,15 @@ void loop()
 
     // calculate yaw correction
     float yawAdjust = headingPID(deltaTime);
+    yawAdjust = 0; // disable for now
 
     float throttle01a = util::clamp(throttlePower + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttlePower - yawAdjust, 0.0f, 1.0f);
 
     esc1.setThrottle01(throttle01a);
-    esc2.setThrottle01(throttle01b);
+    esc2.setThrottle01(throttle01b*0.93); // a temporary yaw adjust to not have to tune a PID 
     esc1.update();
     esc2.update();
-
-    // don't want PID gaining windup when throttle is zero
-    if (throttlePower == 0.0)
-    {
-        resetPIDs();
-    }
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
     if (loopCount % static_cast<int>(loopFreq / 20) == 0)

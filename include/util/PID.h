@@ -19,7 +19,8 @@ public:
     {
 
         if (std::isnan(prev_meas_))
-        {
+        {   
+
             prev_meas_ = measurement;
             // First call: just proportional action.
             const double error = setpoint - measurement;
@@ -63,7 +64,6 @@ public:
         {
             integral_ = integral_output / ki_; // store back clamped integral
         }
-
         double output = kp_ * error + integral_output + kd_ * deriv_term;
 
         return clampOutput(output);
@@ -93,6 +93,7 @@ public:
     double getP() const { return kp_; }
     double getI() const { return ki_; }
     double getD() const { return kd_; }
+    double getIntegralOutput() const { return integral_ * ki_; }
 
     void setOutputLimits(double min_out, double max_out)
     {

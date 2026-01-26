@@ -77,11 +77,11 @@ public:
     int16_t getTemperature(){ return _temperature; }     // in deg C / 100
     uint16_t getTime(){ return _tfTime; }          // in ms
     bool hasData(){ return _hasData; }
-    
+
 private:
 
    
-    uint16_t _tfFrame = TFL_DEF_FPS;   // default frame rate
+    uint16_t _tfFrame = FPS_125;   // default frame rate
     uint16_t _addr = TFL_DEF_ADR;    // default I2C address
     char _name ='X';
 
