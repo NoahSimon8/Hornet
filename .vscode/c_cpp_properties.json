@@ -10,7 +10,6 @@
             "includePath": [
                 "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/include",
                 "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/src",
-                "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/.pio/libdeps/teensy41/TFLI2C/src",
                 "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/.pio/libdeps/teensy41/ArduinoEigen",
                 "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/.pio/libdeps/teensy41/ArxTypeTraits",
                 "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/.pio/libdeps/teensy41/Adafruit PWM Servo Driver Library",
@@ -124,7 +123,6 @@
                 "path": [
                     "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/include",
                     "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/src",
-                    "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/.pio/libdeps/teensy41/TFLI2C/src",
                     "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/.pio/libdeps/teensy41/ArduinoEigen",
                     "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/.pio/libdeps/teensy41/ArxTypeTraits",
                     "C:/Users/nrjjs/OneDrive/Desktop/code/cpp/hornet/.pio/libdeps/teensy41/Adafruit PWM Servo Driver Library",
