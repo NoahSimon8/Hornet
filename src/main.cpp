@@ -49,8 +49,8 @@ PWMDriver pwm;
 ESC esc1(pwm, CH_ESC1, 1120, 2000);
 ESC esc2(pwm, CH_ESC2, 1120, 2000);
 IMU imu(0x4B, Wire);
-LIDAR lidarX(Wire2); // Not actually sure which one is X or Y, need to check later by cross-referencing TVC movement
-// LIDAR lidarY(Wire1);  <---- and this isn't currently plugged in
+LIDAR lidarX(Wire2, 26); // Not actually sure which one is X or Y, need to check later by cross-referencing TVC movement
+LIDAR lidarY(Wire1, 15);
 
 // Linkage numbers — copy your real values here
 TVCServo::Linkage linkX{/*L1*/ 44, /*L2*/ 76.8608, /*L3*/ 75.177, /*L4*/ 28, /*beta0*/ 77.98, /*theta0*/ 77.98};
@@ -215,18 +215,18 @@ void setup()
     {
     }
 
-#ifdef TEENSYDUINO
-    Serial.print("TEENSYDUINO defined, version = ");
-    Serial.println(TEENSYDUINO);
-#else
-    Serial.println("TENSYDUINO NOT defined");
-#endif
+    #ifdef TEENSYDUINO
+        Serial.print("TEENSYDUINO defined, version = ");
+        Serial.println(TEENSYDUINO);
+    #else
+        Serial.println("TENSYDUINO NOT defined");
+    #endif
 
-#ifdef ARDUINO_TEENSY41
-    Serial.println("ARDUINO_TEENSY41 defined");
-#else
-    Serial.println("ARDUINO_TEENSY41 NOT defined");
-#endif
+    #ifdef ARDUINO_TEENSY41
+        Serial.println("ARDUINO_TEENSY41 defined");
+    #else
+        Serial.println("ARDUINO_TEENSY41 NOT defined");
+    #endif
 
     // PWM driver for servos/ESCx
     pwm.begin(50.0f);
@@ -247,20 +247,7 @@ void setup()
     esc1.setMicroseconds(1000);
     esc2.setMicroseconds(1000);
 
-    // IMU
-    Wire2.begin();          // Teensy 4.1: SDA2=25, SCL2=24
-    Wire2.setClock(400000); // start at 100 kHz
-    Serial.println("I2C scan on Wire2...");
-    for (uint8_t addr = 1; addr < 127; addr++)
-    {
-        Wire2.beginTransmission(addr);
-        uint8_t err = Wire2.endTransmission();
-        if (err == 0)
-        {
-            Serial.printf("Found device at 0x%02X\n", addr);
-        }
-    }
-
+   
     while (!imu.begin())
     {
         Serial.println(F("[fly] IMU failed to start."));
@@ -292,14 +279,23 @@ void setup()
     Serial.println(F("[fly] reference orientation captured."));
     Serial.println(F("[fly] IMU ok."));
 
-
+    lidarX.begin();
+    lidarY.begin();
     lidarX.update();    
-    // while (!lidarX.hasData())
-    // {
-    //     lidarX.update();
-    //     Serial.println(F("[fly] waiting for LIDAR data..."));
-    //     delay(500);
-    // }
+    lidarY.update();
+    while (!lidarY.hasData())
+    {
+        lidarY.update();
+        Serial.println(F("[fly] waiting for LIDAR-Y data..."));
+        delay(500);
+    }
+    while (!lidarX.hasData())
+    {
+        lidarX.update();
+        Serial.println(F("[fly] waiting for LIDAR-X data..."));
+        delay(500);
+    }
+
 
     pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
     pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
@@ -547,6 +543,7 @@ void updateState()
 {   
     imu.update();
     lidarX.update();
+    lidarX.update();
 
     if (imu.hasData())
     {
@@ -561,13 +558,24 @@ void updateState()
         state.heading = a.heading;
     }
 
-    if (lidarX.hasData())
+    // LIDAR altitude data
+    float xHeight= lidarX.hasData() ? lidarX.getDistance() * 0.01f : -1.0f; // in meters
+    float yHeight= lidarY.hasData() ? lidarY.getDistance() * 0.01f : -1.0f; // in meters
+    float prevZ = state.z;
+
+    if (xHeight > 0.0f && yHeight > 0.0f)
     {
-        // LIDAR altitude data
-        float prevZ = state.z;
-        state.z = lidarX.getDistance() * 0.01f; // convert cm to m
-        state.zVel = (state.z - prevZ) / loopFreq; // shoddy velocity measure (temperary) m/s
+        state.z = (xHeight + yHeight) * 0.5f;
     }
+    else if (xHeight > 0.0f)
+    {
+        state.z = xHeight;
+    }
+    else if (yHeight > 0.0f)
+    {
+        state.z = yHeight;
+    }
+    state.zVel = (state.z - prevZ) / loopFreq; // questionable velocity measure (temperary) m/s
 
     // MEKF data for position and rates
 
@@ -626,10 +634,13 @@ void loop()
         targetThrottlePower = 0;
         resetPIDs();
         printStatus(0.0f, 0.0f);
-        delay(50);
+        
+        delay(500);
 
-        // Serial.print("Lidar hasData: ");
-        // Serial.println(lidarX.hasData());
+        Serial.print("Lidar measure: ");
+        Serial.print(lidarX.getDistance());
+        Serial.print(", ");
+        Serial.println(lidarY.getDistance());
 
         return;
     }
