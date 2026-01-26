@@ -10,15 +10,28 @@ public:
     explicit LIDAR(TwoWire &wirePort = Wire2, uint8_t drdy_pin = 26)
       : _wire(&wirePort), _drdy_pin(drdy_pin) {}
 
+    
+    void printName(){
+        Serial.print("LIDAR-");
+        Serial.print(_name);
+        Serial.print(": ");
+    }
+
     void printStatus(){
+        printName();
         _tfluna.printStatus();
         Serial.println();
     }
 
     void begin()
     {   
-        _wire->setSDA(25); // Teensy 4.1: SDA2=25, SCL2=24
-        _wire->setSCL(24);
+        if (_wire==&Wire2){
+            _name = 'X';
+        }
+        else {
+            _name = 'Y';
+        }
+
         _wire->begin();
 
         _tfluna.setWirePort(*_wire);
@@ -52,6 +65,7 @@ public:
                 _hasData = false;
             }
         } else {
+            printName();
             Serial.println("LIDAR data not ready");
 
             _hasData = false;
@@ -63,12 +77,13 @@ public:
     int16_t getTemperature(){ return _temperature; }     // in deg C / 100
     uint16_t getTime(){ return _tfTime; }          // in ms
     bool hasData(){ return _hasData; }
-
+    
 private:
 
    
     uint16_t _tfFrame = TFL_DEF_FPS;   // default frame rate
     uint16_t _addr = TFL_DEF_ADR;    // default I2C address
+    char _name ='X';
 
     int16_t _distance;
     int16_t _signalStrength;

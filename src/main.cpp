@@ -95,7 +95,7 @@ struct desState
 {
     float pitch{0}, roll{0};
     float heading{0}, tiltX{0}, tiltY{0};
-    float x{0}, y{0}, z{0};
+    float x{0}, y{0}, z{1};
     float zVel{0};
 } desState;
 
@@ -160,8 +160,8 @@ void printStatus(float throttle01A, float throttle01B)
 
     printWithComma(esc1.lastUs());
     printWithComma(throttle01A);
-    printWithComma(tvcX.commandedThrustDeg());
-    printWithComma(tvcY.commandedServoDeg());
+    printWithComma(state.z);
+    printWithComma(state.z);
     printWithComma(static_cast<int>(imu.rotationAccuracy()));
 
     printWithComma(state.pitch);
@@ -283,18 +283,23 @@ void setup()
     lidarY.begin();
     lidarX.update();    
     lidarY.update();
-    while (!lidarY.hasData())
+    while (!lidarY.hasData()||
+           !lidarX.hasData())
     {
+
         lidarY.update();
-        Serial.println(F("[fly] waiting for LIDAR-Y data..."));
-        delay(500);
-    }
-    while (!lidarX.hasData())
-    {
+        if (!lidarY.hasData())
+        {
+            Serial.println(F("[fly] waiting for LIDAR-Y data..."));
+        }
         lidarX.update();
-        Serial.println(F("[fly] waiting for LIDAR-X data..."));
+        if (!lidarX.hasData())
+        {
+            Serial.println(F("[fly] waiting for LIDAR-X data..."));
+        }
         delay(500);
     }
+
 
 
     pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
@@ -543,7 +548,7 @@ void updateState()
 {   
     imu.update();
     lidarX.update();
-    lidarX.update();
+    lidarY.update();
 
     if (imu.hasData())
     {
@@ -574,6 +579,10 @@ void updateState()
     else if (yHeight > 0.0f)
     {
         state.z = yHeight;
+    }
+    if (abs(state.z - prevZ) > 10.0f){
+        stopped=true;
+        Serial.println(F("[fly] LIDAR jump detected, stopping."));
     }
     state.zVel = (state.z - prevZ) / loopFreq; // questionable velocity measure (temperary) m/s
 
@@ -635,12 +644,7 @@ void loop()
         resetPIDs();
         printStatus(0.0f, 0.0f);
         
-        delay(500);
-
-        Serial.print("Lidar measure: ");
-        Serial.print(lidarX.getDistance());
-        Serial.print(", ");
-        Serial.println(lidarY.getDistance());
+        delay(50);
 
         return;
     }
@@ -662,9 +666,9 @@ void loop()
     tvcY.update();
 
     // get base throttle
-    float throttle01 = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
+    float targetThrottlePower = verticalPID(deltaTime); // swap to verticalPID(dt) for altitude hold
 
-    targetThrottlePower = util::clamp(throttle01, 0.0f, 1.0f); // for testing only
+    targetThrottlePower = util::clamp(targetThrottlePower, 0.0f, 1.0f); 
 
     // Rate Limiter for Throttle Power
     if (throttlePower < targetThrottlePower)
@@ -685,9 +689,6 @@ void loop()
 
     float throttle01a = util::clamp(throttlePower + yawAdjust, 0.0f, 1.0f);
     float throttle01b = util::clamp(throttlePower - yawAdjust, 0.0f, 1.0f);
-    throttle01a = 0.0;
-    throttle01b = 0.0;
-
 
     esc1.setThrottle01(throttle01a);
     esc2.setThrottle01(throttle01b);
@@ -701,11 +702,8 @@ void loop()
     }
 
     // display data x times per second, as in loopFreq / xf, assuming no loop-time overrun
-
     if (loopCount % static_cast<int>(loopFreq / 20) == 0)
-    {
         printStatus(throttle01a, throttle01b);
-    }
 
     // // Maintain a steady loop rate
     double loopdt = (micros() - loopstartTimestampUS) * 1e-6; // seconds
@@ -713,8 +711,7 @@ void loop()
     double remaining = targetPeriod - loopdt;
     loopCount++;
     if (remaining > 0)
-    {
         delayMicroseconds(static_cast<uint32_t>(remaining * 1e6));
-    }
+
     loopTime = (micros() - loopstartTimestampUS);
 }

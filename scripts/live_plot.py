@@ -228,8 +228,8 @@ def main():
         "tiltY": (-30, 30),
         "loopTime": (0.0, 0.1),
         "rvAcc": (-0.5, 3.5),
-        "tvcX": (-15, 15),
-        "tvcY": (-100, 100),
+        "tvcX": (0, 150),
+        "tvcY": (80,120),
     }
 
     scroll_window = args.scroll_window
