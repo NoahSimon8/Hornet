@@ -514,6 +514,7 @@ std::array<float, 2> lateralPID(float dt)
         const float headingRad = state.heading * DEG2RAD_F;
         desState.roll = cosf(headingRad) * desState.tiltX + sinf(headingRad) * desState.tiltY;
         desState.pitch = -sinf(headingRad) * desState.tiltX + cosf(headingRad) * desState.tiltY;
+        desState.roll = util::clamp(desState.roll, -maxTiltDeg, +maxTiltDeg);
         desState.pitch = util::clamp(desState.pitch, -maxTiltDeg, +maxTiltDeg);
     }
     // innerloop on rotation
